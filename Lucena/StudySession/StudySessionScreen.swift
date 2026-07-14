@@ -36,7 +36,10 @@ struct StudySessionScreen: View {
     @State private var latchedPoisonedLine: [BoardState.PoisonedMove]? = nil
     @State private var latchedPoisonedFrom: String? = nil
     @State private var coachSending = false                // a /turn is in flight → the coach is thinking
-    private var coachWorking: Bool { coachSending }        // drives the board halo + status row
+    // Backend-driven: the coach is "working" while the server holds a status up (published for the
+    // whole turn, cleared after the beat). Not `coachSending` — that clears the instant the WS send
+    // returns, before the beat arrives, which flashed the "Uh oh" fallback and skipped the halo.
+    private var coachWorking: Bool { stream?.coachStatus != nil }   // drives the board halo + status row
     @State private var beatsAtWorkStart = 0         // beat count when the coach started → detect a silent turn
     private let evalGearRowH: CGFloat = 22          // the settings strip above the board; beats matches it
     @State private var sessionOrder: [String] = []  // frozen rail order — sorted by recency once, then stable
