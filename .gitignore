@@ -1,0 +1,8 @@
+# Xcode / SwiftPM build artifacts
+build/
+DerivedData/
+.build/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.DS_Store

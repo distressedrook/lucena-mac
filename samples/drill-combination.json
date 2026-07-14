@@ -1,0 +1,150 @@
+{
+ "schema": 1,
+ "fen": "6k1/pR4p1/7p/4N2K/P6P/8/5b1r/8 w - - 1 2",
+ "side_to_solve": "white",
+ "root": {
+  "kind": "solve",
+  "fen": "6k1/pR4p1/7p/4N2K/P6P/8/5b1r/8 w - - 1 2",
+  "expect_uci": "b7b8",
+  "expect_san": "Rb8+",
+  "win_pct": 77.7,
+  "after": {
+   "kind": "reply",
+   "fen": "1R4k1/p5p1/7p/4N2K/P6P/8/5b1r/8 b - - 2 2",
+   "defenses": [
+    {
+     "uci": "g8h7",
+     "san": "Kh7",
+     "then": {
+      "kind": "solve",
+      "fen": "1R6/p5pk/7p/4N2K/P6P/8/5b1r/8 w - - 3 3",
+      "expect_uci": "e5g6",
+      "expect_san": "Ng6",
+      "win_pct": 82.1,
+      "after": {
+       "kind": "reply",
+       "fen": "1R6/p5pk/6Np/7K/P6P/8/5b1r/8 b - - 4 3",
+       "defenses": [
+        {
+         "uci": "h2h4",
+         "san": "Rxh4+",
+         "then": {
+          "kind": "solve",
+          "fen": "1R6/p5pk/6Np/7K/P6r/8/5b2/8 w - - 0 4",
+          "expect_uci": "g6h4",
+          "expect_san": "Nxh4",
+          "win_pct": 82.7,
+          "after": {
+           "kind": "reply",
+           "fen": "1R6/p5pk/7p/7K/P6N/8/5b2/8 b - - 0 4",
+           "defenses": [
+            {
+             "uci": "g7g6",
+             "san": "g6+",
+             "then": {
+              "kind": "done",
+              "fen": "1R6/p6k/6pp/7K/P6N/8/5b2/8 w - - 0 5",
+              "reason": "converted",
+              "win_pct": 82.2
+             }
+            },
+            {
+             "uci": "f2g3",
+             "san": "Bg3",
+             "then": {
+              "kind": "done",
+              "fen": "1R6/p5pk/7p/7K/P6N/6b1/8/8 w - - 1 5",
+              "reason": "converted",
+              "win_pct": 84.9
+             }
+            },
+            {
+             "uci": "f2h4",
+             "san": "Bxh4",
+             "then": {
+              "kind": "solve",
+              "fen": "1R6/p5pk/7p/7K/P6b/8/8/8 w - - 0 5",
+              "expect_uci": "h5h4",
+              "expect_san": "Kxh4",
+              "win_pct": 83.5,
+              "after": {
+               "kind": "reply",
+               "fen": "1R6/p5pk/7p/8/P6K/8/8/8 b - - 0 5",
+               "defenses": [
+                {
+                 "uci": "a7a6",
+                 "san": "a6",
+                 "then": {
+                  "kind": "done",
+                  "fen": "1R6/6pk/p6p/8/P6K/8/8/8 w - - 0 6",
+                  "reason": "converted",
+                  "win_pct": 85.9
+                 }
+                },
+                {
+                 "uci": "h7g6",
+                 "san": "Kg6",
+                 "then": {
+                  "kind": "done",
+                  "fen": "1R6/p5p1/6kp/8/P6K/8/8/8 w - - 1 6",
+                  "reason": "converted",
+                  "win_pct": 85.9
+                 }
+                },
+                {
+                 "uci": "g7g5",
+                 "san": "g5+",
+                 "then": {
+                  "kind": "done",
+                  "fen": "1R6/p6k/7p/6p1/P6K/8/8/8 w - g6 0 6",
+                  "reason": "converted",
+                  "win_pct": 87.5
+                 }
+                },
+                {
+                 "uci": "a7a5",
+                 "san": "a5",
+                 "then": {
+                  "kind": "done",
+                  "fen": "1R6/6pk/7p/p7/P6K/8/8/8 w - a6 0 6",
+                  "reason": "converted",
+                  "win_pct": 86.9
+                 }
+                },
+                {
+                 "uci": "g7g6",
+                 "san": "g6",
+                 "then": {
+                  "kind": "done",
+                  "fen": "1R6/p6k/6pp/8/P6K/8/8/8 w - - 0 6",
+                  "reason": "converted",
+                  "win_pct": 88.9
+                 }
+                }
+               ],
+               "truncated": true
+              }
+             }
+            },
+            {
+             "uci": "g7g5",
+             "san": "g5",
+             "then": {
+              "kind": "done",
+              "fen": "1R6/p6k/7p/6pK/P6N/8/5b2/8 w - g6 0 5",
+              "reason": "converted",
+              "win_pct": 89.3
+             }
+            }
+           ]
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   ]
+  }
+ }
+}
