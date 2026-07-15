@@ -24,6 +24,7 @@ enum Theme {
 
         static let coachBlue = Color(hex: 0x1E4E7A)    // coach voice, ideas, active beat, "!"
         static let mistakeRed = Color(hex: 0xA62A21)   // threats, "?!"/"?"/"??", wrong
+        static let correctGreen = Color(hex: 0x2E7D46) // solved / right move — the verdict check badge
         static let gold = Color(hex: 0xB8862F)         // active, accents, "▸", prompt
 
         static let boardLight = Color(hex: 0xF1EDE3)

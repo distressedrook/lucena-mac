@@ -76,7 +76,18 @@ final class CoachBridge: Sendable {
         return obj["session_id"] as? String
     }
 
-    /// Make `id` the current session (server-persisted) — used when starting a new session.
+    /// Start a new session — the BACKEND mints the id, makes it active (it also pushes reset + a clean
+    /// snapshot over the WS), and returns it for us to adopt. Returns nil if the server didn't answer.
+    func newSession() async -> String? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("session/new"))
+        req.httpMethod = "POST"
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return obj["session_id"] as? String
+    }
+
+    /// Make `id` the current session (server-persisted) — used when resuming an existing session.
     func setSessionId(_ id: String) async {
         var req = URLRequest(url: baseURL.appendingPathComponent("session"))
         req.httpMethod = "POST"

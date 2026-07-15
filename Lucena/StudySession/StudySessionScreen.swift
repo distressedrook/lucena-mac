@@ -36,6 +36,7 @@ struct StudySessionScreen: View {
     @State private var latchedPoisonedLine: [BoardState.PoisonedMove]? = nil
     @State private var latchedPoisonedFrom: String? = nil
     @State private var coachSending = false                // a /turn is in flight → the coach is thinking
+    @State private var conversationStarted = false         // player typed/sent → dismiss the starter tips (one-way)
     // Backend-driven: the coach is "working" while the server holds a status up (published for the
     // whole turn, cleared after the beat). Not `coachSending` — that clears the instant the WS send
     // returns, before the beat arrives, which flashed the "Uh oh" fallback and skipped the halo.
@@ -107,7 +108,11 @@ struct StudySessionScreen: View {
         if let i = viewIndex, history.indices.contains(i) { return history[i].fen }
         if let held = heldWrong { return held }
         if let solve = solveFen { return solve }
-        return board?.fen ?? BoardState.startFEN
+        // At the live tip, the current position IS the last move played — trust the move line, not a
+        // possibly-stale reported board (a mount-time `/position(start)` could otherwise leave the board
+        // on the start square while the navigator sits on the last move → they disagree). A freeform /
+        // pasted position has no history, so it falls through to the reported board.
+        return history.last?.fen ?? board?.fen ?? BoardState.startFEN
     }
     // Orientation is STABLE: in a drill it's the solver's side (captured once, kept even after the
     // drill ends — so the winning move doesn't flip the board); otherwise the side to move from the
@@ -251,6 +256,10 @@ struct StudySessionScreen: View {
         // server is still authoritative: if it snapped the board back to the node before our cursor
         // (an undo), FOLLOW it — drop the wrong tip move and step back.
         .onChange(of: stream?.board?.fen) { _, fen in
+            // The live board just landed — drop the optimistic hold now (not on the /move response,
+            // which can beat the board event and flicker back to the old position). A WRONG drill move
+            // doesn't advance the board, so this never fires for it; its hold stays until Retry.
+            heldWrong = nil
             if varStack.isEmpty { viewIndex = nil }
             else if let fen { followServerUndo(fen) }
         }
@@ -326,12 +335,18 @@ struct StudySessionScreen: View {
         }
     }
 
-    /// Start a fresh coaching session: mint a new id, make it current on the server, and swap it in
-    /// — the terminal is keyed on `session`, so it relaunches `claude` on the new one.
-    private func startNewSession() { swap(to: freshSession()) }
+    /// Start a fresh coaching session: the BACKEND mints the id (and switches to it, pushing a clean
+    /// snapshot over the WS); we adopt what it returns. Falls back to a local id if the server is down.
+    private func startNewSession() {
+        conversationStarted = false   // a fresh session shows the starter tips again
+        Task {
+            let id = await coach?.newSession() ?? freshSession()
+            session = id
+        }
+    }
 
     /// Resume an existing session from the rail — same swap, with its id (claude --resume picks it up).
-    private func resume(_ id: String) { swap(to: id) }
+    private func resume(_ id: String) { conversationStarted = false; swap(to: id) }
 
     private func swap(to id: String) {
         Task {
@@ -424,6 +439,15 @@ struct StudySessionScreen: View {
                     .offset(y: -(evalGearRowH + Theme.Spacing.xs))
             }
             Spacer(minLength: Theme.Spacing.md)   // guaranteed gap between board and the navigator
+            if let board {                        // "BLACK TO MOVE" / "YOUR MOVE" — sits just above the navigator
+                Text(turnLabel(board))
+                    .font(Theme.Typography.label)
+                    .tracking(Theme.Tracking.label)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.Palette.ink45)
+                    .frame(width: boardOuter, alignment: .leading)
+                    .padding(.bottom, Theme.Spacing.xs)
+            }
             // The navigator is the column's last element, so its bottom edge lands at the column foot
             // (= the terminal's bottom). navReserve keeps it there even with the gear under the bar.
             MoveNavigatorView(
@@ -675,6 +699,17 @@ struct StudySessionScreen: View {
         if let m = mainIdx { viewIndex = m >= liveIndex ? nil : m }
     }
 
+    /// Tapping a played-move chip in the chat: snap the board to the position after that move by moving
+    /// the navigator cursor to its ply. Reuses the mainline cursor, so it clears cleanly on a new move.
+    /// A move not in the line (e.g. a wrong drill move, which isn't recorded) is a no-op.
+    private func snapToMove(_ fen: String) {
+        let key = VariationForest.norm(fen)
+        guard let i = history.firstIndex(where: { VariationForest.norm($0.fen) == key }) else { return }
+        clearVariationCursor()
+        heldWrong = nil
+        viewIndex = (i >= liveIndex && history.indices.contains(i) && history[i].fen == board?.fen) ? nil : i
+    }
+
     /// Drop out of any variation (used when the drill/board resets under us).
     private func clearVariationCursor() { varStack = []; varCursor = 0; collapseTo = nil; openCaret = nil }
 
@@ -820,7 +855,9 @@ struct StudySessionScreen: View {
                 lastMoveWrong = true                  // keep the hold; Retry appears
                 lastMoveUci = from + to               // remember the move so "Why?" can explain it
             } else {
-                heldWrong = nil; solveFen = nil        // correct / non-drill → the live board takes over
+                // Correct / non-drill → the hold is dropped by onChange(board.fen) when the live board
+                // lands (no flicker). Here we only clear the drill/Retry state.
+                solveFen = nil
                 lastMoveWrong = false
                 // Solved the whole drill → let the MCP know, so the coach gives a grounded closing.
                 if r?.drill == true && r?.finished == true {
@@ -840,22 +877,85 @@ struct StudySessionScreen: View {
     /// the chat reveals in one shot, never piecemeal as board/beats/history arrive event by event.
     private var isWarmingUp: Bool { !(stream?.ready ?? false) }
 
-    /// The chat's warm-up state: a few shimmering skeleton lines under a quiet caption, so the panel
-    /// reads as "coming up" rather than blank while Maia loads.
+    /// The chat's warm-up state: a full-height CHAT skeleton (alternating coach / player message
+    /// blocks) that fills the panel down to the input box, so it reads as "a conversation loading",
+    /// not three lonely lines. Shimmers while the server + Maia come up.
     private var coachLoading: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            ShimmerBar(width: 240)
-            ShimmerBar(width: 300)
-            ShimmerBar(width: 190)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            skeletonMessage(coach: true,  widths: [230, 300, 180])
+            skeletonMessage(coach: false, widths: [150])
+            skeletonMessage(coach: true,  widths: [280, 220])
+            skeletonMessage(coach: false, widths: [190])
+            skeletonMessage(coach: true,  widths: [260, 300, 150])
+            Spacer(minLength: 0)
             Text(verbatim: "Warming up the engine…")
                 .font(Theme.Typography.label)
                 .tracking(Theme.Tracking.label)
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.Palette.ink.opacity(0.5))
-                .padding(.top, Theme.Spacing.xs)
-            Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// One skeleton chat bubble — a left-aligned coach block or a right-aligned player block.
+    private func skeletonMessage(coach: Bool, widths: [CGFloat]) -> some View {
+        VStack(alignment: coach ? .leading : .trailing, spacing: Theme.Spacing.xs) {
+            ForEach(widths.indices, id: \.self) { i in ShimmerBar(width: widths[i]) }
+        }
+        .frame(maxWidth: .infinity, alignment: coach ? .leading : .trailing)
+    }
+
+    /// Example starter prompts, shown on a fresh (empty) session — tap to send.
+    private static let starterPrompts = [
+        "Give me a puzzle",
+        "Let's learn about endgames today",
+        "Play a friendly match against an 1800 bot",
+    ]
+
+    /// The empty-session state: a quiet prompt + tappable example chips, so a new session isn't a blank
+    /// panel. Tapping a chip sends it as the first turn.
+    private var emptySessionPrompts: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Spacer(minLength: 0)
+            Text(verbatim: "Try one of these to get started")
+                .font(Theme.Typography.label)
+                .tracking(Theme.Tracking.label)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.Palette.ink.opacity(0.5))
+            ForEach(Self.starterPrompts, id: \.self) { p in promptChip(p) }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private func promptChip(_ text: String) -> some View {
+        Button { sendPrompt(text) } label: {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "sparkles").foregroundStyle(Theme.Palette.gold)
+                Text(verbatim: text)
+                    .font(Theme.Typography.youBubble)
+                    .foregroundStyle(Theme.Palette.ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 10).padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Palette.paperDeep)
+            .overlay(Rectangle().stroke(Theme.Palette.ink.opacity(0.3), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(coachSending || session == nil)
+    }
+
+    /// Send a starter prompt as the first turn (mirrors the input pane's send).
+    private func sendPrompt(_ text: String) {
+        guard let session, let coach, !coachSending else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { conversationStarted = true }   // dismiss the tips
+        coachSending = true
+        Task {
+            _ = await coach.sendTurn(text: text, sessionId: session)
+            await MainActor.run { coachSending = false }
+        }
     }
 
     /// The chat footer: the live "what the coach is doing" line (tool-grounded), then any action
@@ -972,13 +1072,19 @@ struct StudySessionScreen: View {
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         moveHead
                         if isWarmingUp {
-                            coachLoading            // server + Maia still coming up → shimmer, not empty
+                            coachLoading            // server + Maia still coming up → chat skeleton
+                                .transition(.opacity)
+                        } else if beats.isEmpty && !conversationStarted {
+                            emptySessionPrompts     // fresh session → tappable starter prompts
                                 .transition(.opacity)
                         } else {
-                            BeatsColumnView(beats: beats) {
-                                chatFooter   // status + buttons in the chat
-                            }
+                            // The conversation scrolls; the coach status + action buttons are PINNED
+                            // just below it. Buttons rendered INSIDE the ScrollView's content don't
+                            // reliably receive clicks on macOS (Retry / "show me the trap" fired their
+                            // labels but never their actions), so they live outside the scroll now.
+                            BeatsColumnView(beats: beats, onMoveTap: snapToMove)
                                 .transition(.opacity)
+                            chatFooter   // status + Retry / Why / show-me-the-trap — outside the scroll
                         }
                     }
                 case .analysis:
@@ -991,7 +1097,8 @@ struct StudySessionScreen: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             ChatInputPaneView(maxHeight: columnHeight * 0.5, session: session, coach: coach,
-                              loading: isWarmingUp || session == nil, sending: $coachSending)   // the input surface
+                              loading: isWarmingUp || session == nil, sending: $coachSending,
+                              onEngage: { withAnimation(.easeInOut(duration: 0.25)) { conversationStarted = true } })
                 .frame(maxWidth: .infinity)
         }
     }
@@ -1022,21 +1129,14 @@ struct StudySessionScreen: View {
     /// The beats-column header — the board's caption (coach-set) and whose move it is, both grounded
     /// in the live board. Nothing before a board exists.
     @ViewBuilder private var moveHead: some View {
-        if let board {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-                if let caption = board.caption, !caption.isEmpty {
-                    Text(verbatim: caption)
-                        .font(Theme.Typography.moveLg)
-                        .foregroundColor(Theme.Palette.ink)
-                        .lineLimit(1)
-                }
-                Spacer()
-                Text(turnLabel(board))
-                    .font(Theme.Typography.label)
-                    .tracking(Theme.Tracking.label)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.Palette.ink45)
-            }
+        // The "to move" label now sits above the move navigator; this keeps only the coach's board
+        // caption (an arrow/idea title) at the head of the chat column, when present.
+        if let caption = board?.caption, !caption.isEmpty {
+            Text(verbatim: caption)
+                .font(Theme.Typography.moveLg)
+                .foregroundColor(Theme.Palette.ink)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

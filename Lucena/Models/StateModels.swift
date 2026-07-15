@@ -177,6 +177,9 @@ struct Beat: Codable, Equatable, Identifiable {
     var segments: [Segment]
     var hints: [String]?
     var you: String?          // an inline player reply shown after this beat (mockup fidelity)
+    var correct: Bool?        // on a "you" DRILL move: true → green check badge, false → red cross
+    var move: String?         // on a "you" move: the SAN, rendered as a clickable navigator-style chip
+    var fen: String?          // the position right after `move` — clicking the chip snaps the board here
     var boardSeq: Int?
     var ts: Double?
     var id: Int { i }
@@ -190,11 +193,14 @@ struct Beat: Codable, Equatable, Identifiable {
         segments = try c.decodeIfPresent([Segment].self, forKey: .segments) ?? []
         hints = try c.decodeIfPresent([String].self, forKey: .hints)
         you = try c.decodeIfPresent(String.self, forKey: .you)
+        correct = try c.decodeIfPresent(Bool.self, forKey: .correct)
+        move = try c.decodeIfPresent(String.self, forKey: .move)
+        fen = try c.decodeIfPresent(String.self, forKey: .fen)
         boardSeq = try c.decodeIfPresent(Int.self, forKey: .boardSeq)
         ts = try c.decodeIfPresent(Double.self, forKey: .ts)
     }
     enum CodingKeys: String, CodingKey {
-        case i, kind, tone, stops, segments, hints, you, boardSeq, ts
+        case i, kind, tone, stops, segments, hints, you, correct, move, fen, boardSeq, ts
     }
 
     var isAsk: Bool { kind == "ask" }

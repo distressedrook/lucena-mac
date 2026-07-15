@@ -5,10 +5,13 @@ import SwiftUI
 /// inline "you" reply (the player's words, right-aligned).
 struct BeatsColumnView<Footer: View>: View {
     let beats: [Beat]
+    let onMoveTap: (String) -> Void     // tap a move chip → snap the board to that position (by fen)
     let footer: () -> Footer            // action buttons that flow at the END of the conversation
 
-    init(beats: [Beat], @ViewBuilder footer: @escaping () -> Footer = { EmptyView() }) {
+    init(beats: [Beat], onMoveTap: @escaping (String) -> Void = { _ in },
+         @ViewBuilder footer: @escaping () -> Footer = { EmptyView() }) {
         self.beats = beats
+        self.onMoveTap = onMoveTap
         self.footer = footer
     }
 
@@ -21,8 +24,11 @@ struct BeatsColumnView<Footer: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 ForEach(beats) { beat in
-                    BeatRow(beat: beat, active: beat.id == beats.last?.id)
+                    BeatRow(beat: beat, active: beat.id == beats.last?.id, onMoveTap: onMoveTap)
                         .id(beat.id)
+                        // Each beat animates IN — the player's own turns slide from the right (like a
+                        // sent message), the coach's from the left.
+                        .transition(.opacity.combined(with: .move(edge: beat.isYou ? .trailing : .leading)))
                 }
                 footer()                                        // Retry / show-me-the-trap, in-flow
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -36,10 +42,11 @@ struct BeatsColumnView<Footer: View>: View {
 private struct BeatRow: View {
     let beat: Beat
     let active: Bool
+    var onMoveTap: (String) -> Void = { _ in }
 
     var body: some View {
         if beat.isYou {
-            youBubble(beat.text)          // a standalone player turn — just the bubble, no coach rule
+            youBubble(beat.text, correct: beat.correct, move: beat.move, fen: beat.fen)
         } else {
             HStack(alignment: .top, spacing: 0) {
                 Rectangle()
@@ -54,7 +61,7 @@ private struct BeatRow: View {
                         .foregroundStyle(Theme.Palette.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     if let you = beat.you {
-                        youBubble(you)
+                        youBubble(you, correct: nil, move: nil, fen: nil)
                     }
                 }
                 .padding(.leading, Theme.Spacing.lg)
@@ -63,35 +70,68 @@ private struct BeatRow: View {
     }
 
     private var label: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            Circle()
-                .fill(Theme.Palette.ink)
-                .frame(width: Theme.Size.coachAvatar, height: Theme.Size.coachAvatar)
-            Text(Strings.StudySession.coachName)
-                .font(Theme.Typography.labelSmall)
-                .tracking(Theme.Tracking.labelWide)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.Palette.ink70)
-        }
+        Text(Strings.StudySession.coachName)
+            .font(Theme.Typography.labelSmall)
+            .tracking(Theme.Tracking.labelWide)
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.Palette.ink70)
     }
 
-    private func youBubble(_ text: String) -> some View {
+    private func youBubble(_ text: String, correct: Bool?, move: String?, fen: String?) -> some View {
         VStack(alignment: .trailing, spacing: Theme.Spacing.xxs) {
             Text(Strings.StudySession.youLabel)
                 .font(Theme.Typography.labelSmall)
                 .tracking(Theme.Tracking.labelWide)
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.Palette.ink45)
-            Text(text)
-                .font(Theme.Typography.youBubble)
-                .foregroundStyle(Theme.Palette.ink82)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 13)
-                .background(Theme.Palette.paperDeep)
-                .overlay(Rectangle().stroke(Theme.Palette.ink.opacity(0.3), lineWidth: 1))
+            HStack(spacing: Theme.Spacing.xs) {
+                if let correct { verdictBadge(correct) }   // drill move → green check / red cross box
+                if let move, let fen {                     // a played move → clickable navigator-style chip
+                    Text(verbatim: "Played")
+                        .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
+                    moveChip(move) { onMoveTap(fen) }
+                    if let sfx = suffix(of: text, after: move), !sfx.isEmpty {
+                        Text(verbatim: sfx)
+                            .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
+                    }
+                } else {
+                    Text(text)                             // plain text, no bubble box; same size as the coach
+                        .font(Theme.Typography.coachBody)
+                        .foregroundStyle(Theme.Palette.ink82)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.top, Theme.Spacing.xxs)
+    }
+
+    /// The played move as a boxed chip — styled like the navigator's SELECTED move: a solid black box
+    /// with the figurine glyph in light, in the navigator's move font. Tapping snaps the board there.
+    private func moveChip(_ move: String, action: @escaping () -> Void) -> some View {
+        Text(verbatim: MoveListStyle.figurine(move))
+            .font(Theme.Typography.move)
+            .foregroundStyle(Theme.Palette.paper)
+            .padding(.vertical, Theme.Spacing.xxs)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .background(Theme.Palette.ink)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+    }
+
+    /// The echo text after the move token ("Played Qf3+ — takes the bishop" → " — takes the bishop").
+    private func suffix(of text: String, after move: String) -> String? {
+        guard let r = text.range(of: move) else { return nil }
+        return String(text[r.upperBound...])
+    }
+
+    /// The drill verdict next to a played move: a solid square — green with a check (right) or red with
+    /// a cross (wrong). Replaces the canned "That's right!" / "not quite" feedback beat.
+    private func verdictBadge(_ correct: Bool) -> some View {
+        Image(systemName: correct ? "checkmark" : "xmark")
+            .font(.system(size: 12, weight: .heavy))
+            .foregroundStyle(Theme.Palette.paper)
+            .frame(width: 24, height: 24)
+            .background(correct ? Theme.Palette.correctGreen : Theme.Palette.mistakeRed)
     }
 }
 

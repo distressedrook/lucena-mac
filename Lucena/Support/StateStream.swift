@@ -76,6 +76,12 @@ final class StateStream {
         let ws = URLSession.shared.webSocketTask(with: url)
         ws.resume()
         wsTask = ws
+        // Re-baseline the version on every (re)connect. A fresh socket always begins with a full
+        // authoritative snapshot, and the server's version sequence restarts on a backend restart —
+        // often LOWER than what we last saw. Without this reset the version guard would drop that
+        // snapshot (and every delta after it) as "stale", silently freezing the app until the server
+        // happened to climb back past our old number. A new connection is a clean slate.
+        version = 0
         withAnimation(.easeInOut(duration: 0.3)) { connected = true }   // eases the warm-up → chat swap
         defer { if wsTask === ws { wsTask = nil } }
         // Each server→client frame is one JSON object `{type: <channel>, ...payload}`. Extract the
