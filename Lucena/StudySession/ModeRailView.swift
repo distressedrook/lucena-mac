@@ -26,12 +26,20 @@ struct ModeRailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-            Image("logo")
-                .resizable()
-                .scaledToFit()
-                .frame(height: Theme.Size.logo)
-                .padding(.horizontal, 16)
-                .padding(.bottom, Theme.Spacing.lg)
+            HStack(alignment: .bottom, spacing: 4) {
+                // The rook reads as the "L" — "ucena" completes the wordmark.
+                Image("logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: Theme.Size.logo)
+                Text("ucena")
+                    .font(.system(size: 28, weight: .semibold, design: .serif))
+                    .tracking(-0.3)
+                    .foregroundStyle(Theme.Palette.ink)
+                    .padding(.bottom, 3)   // sit the baseline on the rook's foot
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, Theme.Spacing.lg)
 
             ForEach(RailMode.allCases, id: \.self) { mode in
                 RailItem(title: mode.title, active: mode == selected) { onSelect(mode) }
