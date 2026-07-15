@@ -36,7 +36,8 @@ struct ModeRailView: View {
                     .font(.system(size: 28, weight: .semibold, design: .serif))
                     .tracking(-0.3)
                     .foregroundStyle(Theme.Palette.ink)
-                    .padding(.bottom, 3)   // sit the baseline on the rook's foot
+                    // align the letters' baseline to the rook's foot (ignore descender space)
+                    .alignmentGuide(.bottom) { d in d[.lastTextBaseline] }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, Theme.Spacing.lg)
