@@ -45,7 +45,7 @@
     stroke-linejoin="miter"
   />
   <path
-    d="M160 169H231C222 204 217 241 220 278C222 306 230 331 248 352H160Z"
+    d="M160 169H224V386H160Z"
     fill="#001a2b"
     stroke="#001a2b"
     stroke-width="4"
@@ -61,7 +61,7 @@
     stroke-linejoin="miter"
   />
   <path
-    d="M160 364H282V384L184 389H320V432H160Z"
+    d="M160 364H224V386H320V432H160Z"
     fill="#001a2b"
     stroke="#001a2b"
     stroke-width="4"
