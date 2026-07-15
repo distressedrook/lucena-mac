@@ -33,7 +33,7 @@ struct ModeRailView: View {
                     .scaledToFit()
                     .frame(height: Theme.Size.logo)
                 Text("ucena")
-                    .font(.system(size: 28, weight: .semibold, design: .serif))
+                    .font(Theme.Typography.serif(28, .semibold))
                     .tracking(-0.3)
                     .foregroundStyle(Theme.Palette.ink)
                     // align the letters' baseline to the rook's foot (ignore descender space)

@@ -53,14 +53,21 @@ enum Theme {
         static let xxxl: CGFloat = 52   // page sections
     }
 
-    // MARK: Typography — three voices. Serif speaks, mono annotates.
+    // MARK: Typography — three voices. Lora (serif) speaks, mono annotates.
     enum Typography {
-        static let display = Font.system(size: 30, weight: .semibold, design: .serif)
-        static let heading = Font.system(size: 21, weight: .semibold, design: .serif)
-        static let coachBody = Font.system(size: 17.5, weight: .regular, design: .serif)
-        static let aside = Font.system(size: 14.5, weight: .regular, design: .serif).italic()
-        static let youBubble = Font.system(size: 15, weight: .regular, design: .serif)
-        static let mark = Font.system(size: 21, weight: .semibold, design: .serif) // ?! ! glyph
+        // Lora (SIL OFL) — bundled under Fonts/, registered via Info.plist ATSApplicationFontsPath.
+        // The brand serif; the same face drives the web build. `serif(_:_:)` is the single knob.
+        static let display = serif(30, .semibold)
+        static let heading = serif(21, .semibold)
+        static let coachBody = serif(17.5)
+        static let aside = serif(14.5).italic()
+        static let youBubble = serif(15)
+        static let mark = serif(21, .semibold) // ?! ! glyph
+
+        /// Brand serif (Lora). Change the family here and it changes everywhere.
+        static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+            Font.custom("Lora", size: size).weight(weight)
+        }
 
         // Menlo (not SF Mono): SF Mono lacks the black chess glyphs (♞♛♜…), so figurine notation fell
         // back to an inconsistent per-glyph font and rendered the knight/pawn wrong. Menlo carries the
