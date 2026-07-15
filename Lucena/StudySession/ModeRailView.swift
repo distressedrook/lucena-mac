@@ -26,7 +26,7 @@ struct ModeRailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-            HStack(alignment: .bottom, spacing: -2) {
+            HStack(alignment: .bottom, spacing: 0) {
                 // The rook reads as the "L" — "ucena" completes the wordmark.
                 Image("logo")
                     .resizable()
