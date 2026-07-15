@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 440" role="img" aria-labelledby="title desc">
+  <title id="title">Stylized chess rook</title>
+  <desc id="desc">A two-tone navy and transparent chess rook, isolated from the decorative reference.</desc>
+
+  <!-- Left half of the crown -->
+  <path
+    d="M50 20H92V55H139V20H160V112H112V94H65Z"
+    fill="none"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+
+  <!-- Right half of the crown -->
+  <path
+    d="M160 20H181V55H226V20H274L258 94H210V112H160Z"
+    fill="#001a2b"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+
+  <!-- Collar -->
+  <path
+    d="M78 124H160V169H94L86 153H78Z"
+    fill="none"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+  <path
+    d="M160 124H248V153H231L226 169H160Z"
+    fill="#001a2b"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+
+  <!-- Tapered body -->
+  <path
+    d="M94 169H160V352H79C99 319 108 282 108 244C108 214 103 188 94 169Z"
+    fill="none"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+  <path
+    d="M160 169H231C222 204 217 241 220 278C222 306 230 331 248 352H160Z"
+    fill="#001a2b"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+
+  <!-- Foot and base -->
+  <path
+    d="M42 364H160V432H4V389H42Z"
+    fill="none"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+  <path
+    d="M160 364H282V384L184 389H320V432H160Z"
+    fill="#001a2b"
+    stroke="#001a2b"
+    stroke-width="4"
+    stroke-linejoin="miter"
+  />
+</svg>

@@ -26,10 +26,10 @@ struct ModeRailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-            Circle()
-                .fill(Theme.Palette.ink)
-                .frame(width: Theme.Size.logo, height: Theme.Size.logo)
-                .overlay(Circle().stroke(Theme.Palette.ink, lineWidth: 1.5))
+            Image("logo")
+                .resizable()
+                .scaledToFit()
+                .frame(height: Theme.Size.logo)
                 .padding(.horizontal, 16)
                 .padding(.bottom, Theme.Spacing.lg)
 
