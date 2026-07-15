@@ -49,13 +49,6 @@
             ReferencedContainer = "container:Lucena.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "LUCENA_HOME"
-            value = "/Users/avismara/Development/chess-coach/coach-home"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
