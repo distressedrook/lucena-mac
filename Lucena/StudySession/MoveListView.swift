@@ -85,6 +85,24 @@ enum MoveListStyle {
         return g + san.dropFirst()
     }
 
+    /// One already-numbered move ("1.Nf3", "1...c5") in the app's own figurine style: "1. ♞f3",
+    /// "1… c5".
+    ///
+    /// The BACKEND owns the numbering (it has the position; the beat carries only the rendered
+    /// string), but the app owns how a move LOOKS — the spacing and the "…" here match `numbered`
+    /// above, so the neutral lane reads like the move list rather than like a wire payload. Plain
+    /// `figurine` cannot do this alone: it maps only the FIRST character, so behind a number prefix
+    /// the piece letter never becomes a glyph and "1.Nf3" renders as-is.
+    static func figurineNumbered(_ notation: String) -> String {
+        guard let r = notation.range(of: #"^\d+\.{1,3}"#, options: .regularExpression) else {
+            return figurine(notation)            // no prefix we recognise — render it verbatim
+        }
+        let prefix = notation[notation.startIndex..<r.upperBound]
+        let san = figurine(String(notation[r.upperBound...]))
+        let number = prefix.prefix(while: \.isNumber)
+        return prefix.hasSuffix("...") ? "\(number)… \(san)" : "\(number). \(san)"
+    }
+
     /// A variation line as PGN-numbered figurine text, e.g. "18… ♝a6 19. b4" — numbers derived from
     /// each node's resulting fen (fullmove ticks after Black; the mover is the side NOT to move).
     static func numbered(_ nodes: [VarNode]) -> String {

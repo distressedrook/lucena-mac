@@ -26,9 +26,12 @@ struct BeatsColumnView<Footer: View>: View {
                 ForEach(beats) { beat in
                     BeatRow(beat: beat, active: beat.id == beats.last?.id, onMoveTap: onMoveTap)
                         .id(beat.id)
-                        // Each beat animates IN — the player's own turns slide from the right (like a
-                        // sent message), the coach's from the left.
-                        .transition(.opacity.combined(with: .move(edge: beat.isYou ? .trailing : .leading)))
+                        // Each beat animates IN, and the DIRECTION is attribution: the player's own
+                        // turns slide from the right (like a sent message), the coach's from the left.
+                        // A neutral move belongs to neither, so it must not slide from either side —
+                        // sliding it in from the right would say "you played this" in motion, which is
+                        // the same claim the text was just stopped from making. It fades in place.
+                        .transition(BeatTransition.forBeat(beat))
                 }
                 footer()                                        // Retry / show-me-the-trap, in-flow
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -39,13 +42,31 @@ struct BeatsColumnView<Footer: View>: View {
     }
 }
 
+/// Which way a beat enters — the one place that answers "whose turn is this?" in motion.
+///
+/// A helper rather than a ternary at the call site because that ternary was the FOURTH copy of the
+/// same attribution (the label, the alignment, the bubble, the transition), and it was the one that
+/// kept saying "the player" after the other three had been fixed. Attribution is a property of the
+/// beat; it belongs somewhere a new lane has to answer for itself.
+private enum BeatTransition {
+    static func forBeat(_ beat: Beat) -> AnyTransition {
+        if beat.isNeutralMove { return .opacity }              // nobody's: no direction to come from
+        return .opacity.combined(with: .move(edge: beat.isYou ? .trailing : .leading))
+    }
+}
+
 private struct BeatRow: View {
     let beat: Beat
     let active: Bool
     var onMoveTap: (String) -> Void = { _ in }
 
     var body: some View {
-        if beat.isYou {
+        if beat.isNeutralMove, let notation = beat.notation, let fen = beat.fen {
+            // A move on the shared analysis board. Checked BEFORE isYou: it is a "you" beat on the
+            // wire (so old clients degrade to the bubble rather than mislabelling it as the coach),
+            // but there is no "you" in freeform to attribute it to.
+            neutralMove(notation, fen: fen)
+        } else if beat.isYou {
             youBubble(beat.text, correct: beat.correct, move: beat.move, fen: beat.fen)
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -69,6 +90,20 @@ private struct BeatRow: View {
         }
     }
 
+    /// A played move with no speaker: centred, in the navigator's move font, reading as a move list
+    /// rather than as anything anyone said. Tapping snaps the board there, like the "you" chip.
+    private func neutralMove(_ notation: String, fen: String) -> some View {
+        Text(verbatim: MoveListStyle.figurineNumbered(notation))
+            .font(Theme.Typography.move)
+            .foregroundStyle(Theme.Palette.ink70)
+            .padding(.vertical, Theme.Spacing.xxs)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .contentShape(Rectangle())
+            .onTapGesture { onMoveTap(fen) }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, Theme.Spacing.xxs)
+    }
+
     private var label: some View {
         Text(Strings.StudySession.coachName)
             .font(Theme.Typography.labelSmall)
@@ -87,7 +122,7 @@ private struct BeatRow: View {
             HStack(spacing: Theme.Spacing.xs) {
                 if let correct { verdictBadge(correct) }   // drill move → green check / red cross box
                 if let move, let fen {                     // a played move → clickable navigator-style chip
-                    Text(verbatim: "Played")
+                    Text(Strings.StudySession.played)
                         .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
                     moveChip(move) { onMoveTap(fen) }
                     if let sfx = suffix(of: text, after: move), !sfx.isEmpty {

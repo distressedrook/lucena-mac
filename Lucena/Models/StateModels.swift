@@ -180,6 +180,11 @@ struct Beat: Codable, Equatable, Identifiable {
     var correct: Bool?        // on a "you" DRILL move: true → green check badge, false → red cross
     var move: String?         // on a "you" move: the SAN, rendered as a clickable navigator-style chip
     var fen: String?          // the position right after `move` — clicking the chip snaps the board here
+    // "1.e4" — a FREEFORM move, to be rendered as a neutral move-list line rather than a "you" bubble.
+    // Freeform is a shared analysis board driven from both sides, so there is no "you" to attribute the
+    // move to. Absent → the beat is a real player utterance (typed text, or a drill move) and keeps the
+    // bubble. It rides on kind:"you" so an older client just ignores the key and renders as before.
+    var notation: String?
     var boardSeq: Int?
     var ts: Double?
     var id: Int { i }
@@ -196,15 +201,20 @@ struct Beat: Codable, Equatable, Identifiable {
         correct = try c.decodeIfPresent(Bool.self, forKey: .correct)
         move = try c.decodeIfPresent(String.self, forKey: .move)
         fen = try c.decodeIfPresent(String.self, forKey: .fen)
+        notation = try c.decodeIfPresent(String.self, forKey: .notation)
         boardSeq = try c.decodeIfPresent(Int.self, forKey: .boardSeq)
         ts = try c.decodeIfPresent(Double.self, forKey: .ts)
     }
     enum CodingKeys: String, CodingKey {
-        case i, kind, tone, stops, segments, hints, you, correct, move, fen, boardSeq, ts
+        case i, kind, tone, stops, segments, hints, you, correct, move, fen, notation, boardSeq, ts
     }
 
     var isAsk: Bool { kind == "ask" }
     var isYou: Bool { kind == "you" }   // a player-turn beat — rendered as a right-aligned bubble
+    /// A move played on the shared analysis board: neither the coach's voice nor the player's, so it
+    /// gets its own neutral lane. Needs `fen` too — the lane is a navigable chip, and without a
+    /// position to snap to there is nothing to render.
+    var isNeutralMove: Bool { isYou && notation != nil && fen != nil }
     var text: String { segments.map(\.text).joined() }
 
     /// In-app synthetic beat (previews / local feedback), not decoded from the stream.
