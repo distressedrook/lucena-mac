@@ -340,8 +340,21 @@ struct StudySessionScreen: View {
     private func startNewSession() {
         conversationStarted = false   // a fresh session shows the starter tips again
         Task {
-            let id = await coach?.newSession() ?? freshSession()
-            session = id
+            switch await coach?.newSession() {
+            case .id(let id):
+                coach?.openChat(id)   // move THIS socket to it, or the clean slate lands only on reconnect
+                session = id
+            case .rejected:
+                // The token is dead and the login is taking over. Do NOTHING: minting a local id here
+                // would build a session the server never heard of and push it up a socket that is
+                // being torn down — strictly worse than the empty state the user is about to see.
+                break
+            case .failed, .none:
+                // The server is down, which is not an auth problem. A local id keeps the user moving.
+                let id = freshSession()
+                coach?.openChat(id)
+                session = id
+            }
         }
     }
 
@@ -351,6 +364,7 @@ struct StudySessionScreen: View {
     private func swap(to id: String) {
         Task {
             await coach?.setSessionId(id)   // server records the session first (so /sessions has it)
+            coach?.openChat(id)             // ...then move THIS socket to it (see openChat)
             session = id                     // then swap → refetch the rail list + remount terminal
         }
     }

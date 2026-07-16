@@ -7,4 +7,5 @@ extension EnvironmentValues {
     @Entry var stateStream: StateStream? = nil
     @Entry var coachBridge: CoachBridge? = nil
     @Entry var lucenaHome: URL? = nil
+    @Entry var authClient: AuthClient? = nil
 }

@@ -37,29 +37,87 @@ final class StateStream {
         return d
     }()
 
-    init(baseURL: URL) { self.baseURL = baseURL }
+    /// `token` is a CLOSURE, not a value: the socket reconnects on its own for the life of the app,
+    /// and a token captured once would be the one from launch — stale the moment the user signs in,
+    /// signs out, or their token is revoked. Read it fresh on every connect.
+    /// `onRejected` fires when the server closes the handshake 1008 (policy violation) — the token is
+    /// dead, so the app must return to the login rather than reconnect-loop against a refusal.
+    init(baseURL: URL, token: @escaping @Sendable () -> String? = { nil },
+         onRejected: @escaping @MainActor () -> Void = {}) {
+        self.baseURL = baseURL
+        self.token = token
+        self.onRejected = onRejected
+    }
+
+    private let token: @Sendable () -> String?
+    private let onRejected: @MainActor () -> Void
 
     /// Point at a (new) server URL and (re)start streaming.
     func connect(to url: URL) { baseURL = url; start() }
 
+    /// Bumps on every lifecycle boundary (start / stop). A frame decoded from a socket whose
+    /// generation has passed is DROPPED — see `stream`.
+    ///
+    /// Cancellation alone cannot cover this. `await ws.receive()` may have already COMPLETED, with its
+    /// continuation queued on the main actor behind `stop()`: the task is then cancelled and the state
+    /// cleared, and the loop resumes anyway holding a frame from the previous login session and
+    /// repopulates board/beats/sessions right after sign-out. `Task.isCancelled` is checked too, but it
+    /// is not sufficient alone — the resumed continuation runs before the loop condition is re-tested.
+    /// Safe unguarded: this class is @MainActor, so every touch of it is serialised.
+    private var generation = 0
+
     func start() {
         task?.cancel()
-        task = Task { [weak self] in await self?.runLoop() }
+        generation &+= 1
+        let gen = generation
+        task = Task { [weak self] in await self?.runLoop(gen) }
     }
 
+    /// Stop streaming and forget everything this connection was showing.
+    ///
+    /// Cancelling `task` alone was not enough, and the gap was a real leak across a sign-out: the loop
+    /// task can be parked in `await ws.receive()`, so the SOCKET has to be cancelled to break it —
+    /// otherwise an already-authenticated socket stays alive after the user signs out, still receiving
+    /// (and able to send) on the previous user's credentials. And a cancelled socket alone would still
+    /// leave the last user's board, beats and session list sitting in memory for the next sign-in to
+    /// inherit for a frame. State that belongs to a login session dies with it.
     func stop() {
+        generation &+= 1          // anything already in flight from the old socket is now stale
         task?.cancel()
         task = nil
+        wsTask?.cancel(with: .goingAway, reason: nil)
+        wsTask = nil
         connected = false
+        ready = false
+        board = nil
+        beats = []
+        analysis = nil
+        turn = nil
+        drill = nil
+        history = []
+        engineLines = nil
+        coachStatus = nil
+        sessions = []
+        currentSession = nil
+        view = nil
+        version = 0
     }
 
-    private func runLoop() async {
-        while !Task.isCancelled {
+    private func runLoop(_ gen: Int) async {
+        while !Task.isCancelled && gen == generation {
             do {
-                try await stream(webSocketURL())
+                try await stream(webSocketURL(), gen)
             } catch {
+                let refused = handshakeStatus.map(Self.isAuthRefusal) ?? false
                 connected = false; ready = false
                 wsTask = nil
+                // The server refusing the handshake for a bad/absent token. Reconnecting cannot fix
+                // that — it would spin forever against a refusal behind a frozen board — so hand it to
+                // the login instead and stop.
+                if refused {
+                    await MainActor.run { onRejected() }
+                    return
+                }
                 try? await Task.sleep(for: .seconds(2))   // reconnect; the snapshot re-syncs
             }
         }
@@ -69,11 +127,34 @@ final class StateStream {
     private func webSocketURL() -> URL {
         var comps = URLComponents(url: baseURL.appendingPathComponent("ws"), resolvingAgainstBaseURL: false)!
         comps.scheme = (comps.scheme == "https") ? "wss" : "ws"
+        // The token rides as a query param, not a header: a WS handshake cannot carry Authorization
+        // from a browser, so the server reads `?token=` — and it authenticates BEFORE accepting, so a
+        // bad one closes the handshake rather than leaving an unauthenticated socket alive.
+        if let t = token() {
+            comps.queryItems = (comps.queryItems ?? []) + [URLQueryItem(name: "token", value: t)]
+        }
         return comps.url!
     }
 
-    private func stream(_ url: URL) async throws {
+    /// The HTTP status of the last handshake, when the socket never opened. See `isAuthRefusal`.
+    private var handshakeStatus: Int?
+
+    /// Did the server refuse this handshake on AUTH grounds?
+    ///
+    /// MEASURED against the real backend, not inferred. The backend rejects a socket BEFORE accept
+    /// (`websocket.close(1008)`), and it is tempting to look for 1008 on the client — that is what the
+    /// server sends and what the code used to check. It never arrives. A pre-accept close is an ASGI
+    /// instruction to fail the HTTP UPGRADE, so uvicorn answers the handshake with **403** and the
+    /// socket never exists to carry a close frame. URLSession reports `NSURLErrorDomain -1011`
+    /// (badServerResponse) with `task.response` = 403. So the old check could not fire, ever: an
+    /// expired token meant an infinite reconnect loop behind a frozen board, never the login screen.
+    /// 401 is included because that is what the same middleware returns on the REST side; if the WS
+    /// rejection is ever routed through it, this keeps working.
+    private static func isAuthRefusal(_ status: Int) -> Bool { status == 403 || status == 401 }
+
+    private func stream(_ url: URL, _ gen: Int) async throws {
         let ws = URLSession.shared.webSocketTask(with: url)
+        handshakeStatus = nil
         ws.resume()
         wsTask = ws
         // Re-baseline the version on every (re)connect. A fresh socket always begins with a full
@@ -87,7 +168,19 @@ final class StateStream {
         // Each server→client frame is one JSON object `{type: <channel>, ...payload}`. Extract the
         // channel and hand the whole frame to the (unchanged) typed dispatch.
         while !Task.isCancelled {
-            let message = try await ws.receive()
+            let message: URLSessionWebSocketTask.Message
+            do {
+                message = try await ws.receive()
+            } catch {
+                // Read the handshake status off the task BEFORE rethrowing: it is the only place the
+                // refusal is visible, and it is gone once the task is released.
+                handshakeStatus = (ws.response as? HTTPURLResponse)?.statusCode
+                throw error
+            }
+            // The await above may have resumed AFTER a sign-out cleared everything. This frame belongs
+            // to the login session that just ended; applying it would put the previous user's board and
+            // beats back on screen.
+            guard gen == generation else { return }
             let frame: String
             switch message {
             case .string(let s): frame = s

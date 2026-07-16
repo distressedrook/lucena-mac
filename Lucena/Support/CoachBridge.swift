@@ -6,11 +6,20 @@ import Foundation
 /// follow-up — the tools.py → engine-gRPC rewrite — and stay REST here for now.)
 final class CoachBridge: Sendable {
     private let baseURL: URL
+    private let token: @Sendable () -> String?
     private let sendUp: @Sendable ([String: Any]) -> Void   // -> StateStream.send (up the WS)
+    private let onRejected: @Sendable () -> Void            // -> AuthClient.rejected (401 on any route)
 
-    init(baseURL: URL, sendUp: @escaping @Sendable ([String: Any]) -> Void) {
+    /// `token` is a closure for the same reason as StateStream's: a value captured at init would be
+    /// whatever existed at launch, and go stale on sign-in/out or revocation.
+    /// `onRejected` fires on a 401 from ANY REST route — see `perform`.
+    init(baseURL: URL, sendUp: @escaping @Sendable ([String: Any]) -> Void,
+         token: @escaping @Sendable () -> String? = { nil },
+         onRejected: @escaping @Sendable () -> Void = {}) {
         self.baseURL = baseURL
+        self.token = token
         self.sendUp = sendUp
+        self.onRejected = onRejected
     }
 
     // -- live loop (up the WebSocket) --------------------------------------
@@ -34,6 +43,16 @@ final class CoachBridge: Sendable {
         if let correct { m["correct"] = correct }
         sendUp(m)
         return true
+    }
+
+    /// Point THIS socket at `id` — the server moves our subscription and replays that chat's snapshot.
+    ///
+    /// Required after minting or resuming a chat. The server's events are addressed to a chat's
+    /// subscribers, not broadcast to every socket, so a REST call that changes the active chat is
+    /// invisible to us until the socket itself moves: without this the new chat only appears on the
+    /// next reconnect, because a fresh socket resolves the active chat on connect.
+    func openChat(_ id: String) {
+        sendUp(["type": "open_chat", "session_id": id])
     }
 
     /// Report the position the board is currently SHOWING, so the coach grounds "what about this?"
@@ -65,12 +84,60 @@ final class CoachBridge: Sendable {
         sendUp(["type": "input", "data": payload])
     }
 
+    /// Every REST request is built HERE, so the bearer cannot be forgotten on a route added later —
+    /// the same reason the backend authenticates in middleware rather than per-route.
+    private func request(_ path: String, method: String = "GET") -> URLRequest {
+        var req = URLRequest(url: baseURL.appendingPathComponent(path))
+        req.httpMethod = method
+        if let t = token() { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
+        return req
+    }
+
+    /// Every REST request is EXECUTED here, for the same reason it is built here: a 401 is not a
+    /// per-route concern, and each call site handling it separately means the one added next month
+    /// will not.
+    ///
+    /// Without this, a token revoked mid-session was invisible. Every call site swallowed its failure
+    /// (`try?` → nil → a default), so the UI stayed on the board looking signed in while every action
+    /// quietly did nothing — and `currentSessionId` returning nil sends the caller off to mint a
+    /// LOCAL fallback id, so the app carries on writing into a session the server has never heard of.
+    /// The recovery path was "hope the socket also happens to notice", which it did not (see
+    /// StateStream.isAuthRefusal).
+    ///
+    /// A 401 and a transport failure are NOT the same answer, and collapsing them to nil was itself a
+    /// bug: "the server is down" invites a local fallback, while "your token is dead" must not — the
+    /// caller would build state against a session the server will never accept. See `Outcome`.
+    private func perform(_ req: URLRequest) async -> Outcome {
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return .failed }
+        if (resp as? HTTPURLResponse)?.statusCode == 401 {
+            onRejected()
+            return .rejected
+        }
+        return .ok(data)
+    }
+
+    /// What a REST call actually got back.
+    ///
+    /// `rejected` exists separately from `failed` because callers legitimately paper over `failed` —
+    /// the backend restarts, the network blips, and falling back to a local session id so the user can
+    /// keep moving is the right call. Doing that on a 401 is the opposite of right: the token is dead,
+    /// the login is about to appear, and minting a local id means the app writes into a session the
+    /// server never heard of and pushes it up a socket that is about to be torn down. Nothing is the
+    /// correct action on a rejection, and nothing is only correct if a caller can TELL.
+    enum Outcome {
+        case ok(Data)
+        case rejected      // 401 — the token is dead; the login is taking over. Do not fall back.
+        case failed        // no answer (server down, network). A local fallback may be appropriate.
+
+        var data: Data? { if case .ok(let d) = self { return d }; return nil }
+        var isRejected: Bool { if case .rejected = self { return true }; return false }
+    }
+
     // -- session lifecycle (REST) ------------------------------------------
 
     /// The durable session id, owned by the backend (GET auto-provisions one on first use).
     func currentSessionId() async -> String? {
-        let req = URLRequest(url: baseURL.appendingPathComponent("session"))
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
+        guard let data = await perform(request("session")).data,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         return obj["session_id"] as? String
@@ -78,22 +145,30 @@ final class CoachBridge: Sendable {
 
     /// Start a new session — the BACKEND mints the id, makes it active (it also pushes reset + a clean
     /// snapshot over the WS), and returns it for us to adopt. Returns nil if the server didn't answer.
-    func newSession() async -> String? {
-        var req = URLRequest(url: baseURL.appendingPathComponent("session/new"))
-        req.httpMethod = "POST"
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-        return obj["session_id"] as? String
+    /// Returns `.rejected` when the token is dead, so the caller does NOT fall back to a local id —
+    /// see `Outcome`. `.failed` still means "server down", which a caller may paper over.
+    func newSession() async -> SessionResult {
+        let out = await perform(request("session/new", method: "POST"))
+        if out.isRejected { return .rejected }
+        guard let data = out.data,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = obj["session_id"] as? String
+        else { return .failed }
+        return .id(id)
+    }
+
+    enum SessionResult {
+        case id(String)
+        case rejected
+        case failed
     }
 
     /// Make `id` the current session (server-persisted) — used when resuming an existing session.
     func setSessionId(_ id: String) async {
-        var req = URLRequest(url: baseURL.appendingPathComponent("session"))
-        req.httpMethod = "POST"
+        var req = request("session", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["session_id": id])
-        _ = try? await URLSession.shared.data(for: req)
+        _ = await perform(req)
     }
 
     // -- drill / analysis (REST; backend follow-up) ------------------------
@@ -106,11 +181,10 @@ final class CoachBridge: Sendable {
     /// Push a raw played move for drill adjudication. (Backend `/move` follow-up.)
     @discardableResult
     func playMove(_ uci: String, fen: String) async -> MoveResult {
-        var req = URLRequest(url: baseURL.appendingPathComponent("move"))
-        req.httpMethod = "POST"
+        var req = request("move", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["uci": uci, "fen": fen])
-        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return MoveResult() }
+        guard let data = await perform(req).data else { return MoveResult() }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return (try? decoder.decode(MoveResult.self, from: data)) ?? MoveResult()
@@ -123,10 +197,9 @@ final class CoachBridge: Sendable {
     func resetToStart() async { await post("reset", [:]) }
 
     private func post(_ path: String, _ body: [String: Any]) async {
-        var req = URLRequest(url: baseURL.appendingPathComponent(path))
-        req.httpMethod = "POST"
+        var req = request(path, method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: req)
+        _ = await perform(req)
     }
 }

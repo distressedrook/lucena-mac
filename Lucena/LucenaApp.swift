@@ -17,15 +17,28 @@ struct LucenaApp: App {
 
     @State private var stateStream: StateStream
     @State private var coachBridge: CoachBridge
+    @State private var authClient: AuthClient
 
     init() {
         Self.registerBundledFonts()
-        let stream = StateStream(baseURL: Self.backend)
+        let auth = AuthClient(baseURL: Self.backend)
+        _authClient = State(initialValue: auth)
+        // The token is read through a closure, never captured: the socket reconnects for the life of
+        // the app, so a value taken here would be whatever existed at launch — stale the moment the
+        // user signs in or out.
+        let stream = StateStream(baseURL: Self.backend,
+                                 token: { auth.token },          // nonisolated: safe to read off-main
+                                 onRejected: { auth.rejected() })
         _stateStream = State(initialValue: stream)
         // The live loop goes UP the same socket the state streams down.
-        _coachBridge = State(initialValue: CoachBridge(baseURL: Self.backend, sendUp: { msg in
-            Task { @MainActor in stream.send(msg) }
-        }))
+        _coachBridge = State(initialValue: CoachBridge(
+            baseURL: Self.backend,
+            sendUp: { msg in Task { @MainActor in stream.send(msg) } },
+            token: { auth.token },
+            // A 401 on ANY REST route means the token is dead. Same destination as the socket's own
+            // refusal: drop it and show the login, rather than leave the app looking signed in while
+            // every action silently no-ops.
+            onRejected: { Task { @MainActor in auth.rejected() } }))
     }
 
     /// Register the bundled Lora faces (SIL OFL) so `Font.custom("Lora", …)` resolves. Done in code so
@@ -40,12 +53,36 @@ struct LucenaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            StudySessionScreen()
-                .environment(\.stateStream, stateStream)
-                .environment(\.coachBridge, coachBridge)
-                .frame(minWidth: Theme.Size.windowMin.width, minHeight: Theme.Size.windowMin.height)
-                .preferredColorScheme(.light)   // fixed paper-&-ink identity — never dark-adapt
-                .task { stateStream.start() }
+            Group {
+                // Only a 401 from the backend puts up the login. Auth is optional server-side
+                // (LUCENA_REQUIRE_AUTH), so a local single-user run must not be made to sign in to
+                // itself — we ASK rather than assume. `.unknown` means we haven't heard yet (or the
+                // backend is down), which is not a credentials problem: stay on the board and let the
+                // socket's own reconnect handle it.
+                if authClient.state == .signedOut {
+                    LoginScreen()
+                } else {
+                    StudySessionScreen()
+                        .task { stateStream.start() }
+                }
+            }
+            // Tear the stream down the moment the login session ends — a revoked token
+            // (`rejected()`) or a sign-out. Bound to the STATE, not to either caller: both routes end
+            // here, and a future sign-out button cannot forget to do it.
+            //
+            // The `.task { stateStream.start() }` above does NOT cover this. SwiftUI cancels that task
+            // when the view goes away, but `start()` spawns an UNSTRUCTURED Task, so cancelling the
+            // `.task` does not touch it — the loop lives on, parked in `await ws.receive()`, on a
+            // socket that is still authenticated as the user who just left.
+            .onChange(of: authClient.state) { _, state in
+                if state == .signedOut { stateStream.stop() }
+            }
+            .environment(\.stateStream, stateStream)
+            .environment(\.coachBridge, coachBridge)
+            .environment(\.authClient, authClient)
+            .frame(minWidth: Theme.Size.windowMin.width, minHeight: Theme.Size.windowMin.height)
+            .preferredColorScheme(.light)   // fixed paper-&-ink identity — never dark-adapt
+            .task { await authClient.refresh() }
         }
         .defaultSize(width: Self.initialWindowSize.width, height: Self.initialWindowSize.height)
         .windowResizability(.contentSize)
