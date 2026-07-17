@@ -98,7 +98,7 @@ enum MoveListStyle {
             return figurine(notation)            // no prefix we recognise — render it verbatim
         }
         let prefix = notation[notation.startIndex..<r.upperBound]
-        let san = figurine(String(notation[r.upperBound...]))
+        let san = figurine(notation[r.upperBound...].trimmingCharacters(in: .whitespaces))
         let number = prefix.prefix(while: \.isNumber)
         return prefix.hasSuffix("...") ? "\(number)… \(san)" : "\(number). \(san)"
     }

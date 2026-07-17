@@ -124,6 +124,10 @@ struct StudySessionScreen: View {
         let bottomBlack = drillBottomBlack ?? (anchorFen?.split(separator: " ").dropFirst().first == "b")
         return bottomBlack != flipped
     }
+    // Whatever colour sits at the bottom IS the player, full stop — "I"/"me" in chat means this,
+    // regardless of whose turn it is or who moved last (the coach grounds pronoun resolution on it;
+    // see CoachPrompt.frame server-side). Reported to the backend via /view so it isn't a guess.
+    private var povColor: String { boardFlipped ? "black" : "white" }
     // The eval bar's source: the live analyzer's top line for the CURRENT position (white-relative).
     private var liveEval: (cp: Int, winPct: Double)? {
         guard let el = stream?.engineLines, el.fen == displayedFen, let top = el.lines.first else { return nil }
@@ -293,6 +297,13 @@ struct StudySessionScreen: View {
         // Resume: the server replayed the persisted view (once, in the initial snapshot) — rebuild the
         // exact tree + cursor the user left. viewEpoch bumps only on a `view` event (connect/switch).
         .onChange(of: stream?.viewEpoch) { _, _ in if let v = stream?.view { hydrateView(v) } }
+        // Flipping the board doesn't change `displayedFen`, so the view sync above never fires for
+        // it — but orientation IS "I"/"me" server-side (CoachPrompt.frame), so a flip has to reach
+        // the backend on its own.
+        .onChange(of: povColor) { _, _ in
+            guard stream?.ready == true else { return }
+            Task { await coach?.setView(viewSnapshot()) }
+        }
         // Eval bar: animate from the PREVIOUS value to the new one as the analyzer (or a coach paint)
         // produces it; hold the old value in between so a move never dips the bar to parity. Watch the
         // single DERIVED eval, not its two raw sources (engineLines + board.eval) — a fresh snapshot can
@@ -820,7 +831,7 @@ struct StudySessionScreen: View {
             return branch
         }
         return ["session": session as Any, "fen": displayedFen, "cursor": lineCursor,
-                "in_variation": isInVariation, "line": lineWire, "tree": treeWire]
+                "in_variation": isInVariation, "line": lineWire, "tree": treeWire, "pov": povColor]
     }
 
     /// Resume: rebuild the exact tree + cursor from a replayed view. Idempotent — the forest is
@@ -1096,7 +1107,7 @@ struct StudySessionScreen: View {
                             // just below it. Buttons rendered INSIDE the ScrollView's content don't
                             // reliably receive clicks on macOS (Retry / "show me the trap" fired their
                             // labels but never their actions), so they live outside the scroll now.
-                            BeatsColumnView(beats: beats, onMoveTap: snapToMove)
+                            BeatsColumnView(beats: beats, history: history, onMoveTap: snapToMove)
                                 .transition(.opacity)
                             chatFooter   // status + Retry / Why / show-me-the-trap — outside the scroll
                         }
