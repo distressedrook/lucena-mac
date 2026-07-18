@@ -266,9 +266,26 @@ struct StudySessionScreen: View {
             // The live board just landed — drop the optimistic hold now (not on the /move response,
             // which can beat the board event and flicker back to the old position). A WRONG drill move
             // doesn't advance the board, so this never fires for it; its hold stays until Retry.
+            let heldFen = heldWrong
             heldWrong = nil
-            if varStack.isEmpty { viewIndex = nil }
-            else if let fen { followServerUndo(fen) }
+            guard varStack.isEmpty else { if let fen { followServerUndo(fen) }; return }
+            // If the live board advanced PAST the player's optimistic move, the opponent (the drill bot)
+            // just replied — SLIDE that reply in instead of popping it. Anchor on the player-move ply
+            // first (same position as the hold, so no visible jump, but now ON the line with stable
+            // piece ids), then animate one step to the live tip so the opponent's piece slides. Use the
+            // LAST matching ply (rook-dance puzzles repeat positions). Falls back to an instant snap if
+            // the plies don't line up — never worse than before.
+            if let heldFen, let fen,
+               VariationForest.norm(fen) != VariationForest.norm(heldFen),
+               let k = history.lastIndex(where: { VariationForest.norm($0.fen) == VariationForest.norm(heldFen) }),
+               k + 1 < history.count {
+                viewIndex = k
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.3)) { viewIndex = nil }   // the bot's reply slides
+                }
+            } else {
+                viewIndex = nil
+            }
         }
         // Stable piece ids for the move line; recomputed on appear and whenever the line changes.
         .task(id: history) { pieceIdMaps = PieceTrack.idMaps(history) }
