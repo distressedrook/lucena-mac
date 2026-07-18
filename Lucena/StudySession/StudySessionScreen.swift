@@ -494,6 +494,11 @@ struct StudySessionScreen: View {
                 onBack: variationBack,
                 onCancel: variationCancel
             )
+            // Live move-list changes (a played move, or a drill backtrack rewriting history) must NOT
+            // animate — the move-group `.transition` was flashing every ply in/out. Null the animation
+            // for `history`-driven changes; variation nav still animates (it drives varCursor/varStack
+            // under explicit withAnimation, not history).
+            .animation(nil, value: history)
             .frame(width: boardOuter)                            // navigator spans the board, not the bar
             .background(isInVariation ? Theme.Palette.boardDark : Theme.Palette.paper)   // dark = side-line
             .overlay(Rectangle().stroke(Theme.Palette.ink, lineWidth: 1.5))   // boxed, like the terminal
