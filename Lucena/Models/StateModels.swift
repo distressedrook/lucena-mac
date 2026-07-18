@@ -212,8 +212,11 @@ struct Beat: Codable, Equatable, Identifiable {
         clientId = try c.decodeIfPresent(String.self, forKey: .clientId)
     }
     enum CodingKeys: String, CodingKey {
+        // The stream decoder uses .convertFromSnakeCase, so incoming `client_id` arrives as `clientId`
+        // (like `board_seq` → `boardSeq`) — the case must use the DEFAULT raw value, not "client_id",
+        // or it never matches and reconciliation silently fails (the message doubles).
         case i, kind, tone, stops, segments, hints, you, correct, move, fen, notation, boardSeq, ts
-        case clientId = "client_id"
+        case clientId
     }
 
     var isAsk: Bool { kind == "ask" }
