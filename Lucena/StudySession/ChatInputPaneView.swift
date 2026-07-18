@@ -74,8 +74,12 @@ struct ChatInputPaneView: View {
         guard !t.isEmpty, !sending, !loading, let session, let coach else { return }
         text = ""
         sending = true
+        // Show it the instant it's sent, don't wait for the server: render the "you" bubble locally
+        // under a nonce, send that same nonce up, and let the server's persisted echo reconcile back.
+        let clientId = UUID().uuidString
+        stream?.pushLocalYouBeat(t, clientId: clientId)
         Task {
-            _ = await coach.sendTurn(text: t, sessionId: session)
+            _ = await coach.sendTurn(text: t, sessionId: session, clientId: clientId)
             await MainActor.run { sending = false; focused = true }
         }
     }

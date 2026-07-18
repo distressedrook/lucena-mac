@@ -187,6 +187,11 @@ struct Beat: Codable, Equatable, Identifiable {
     var notation: String?
     var boardSeq: Int?
     var ts: Double?
+    // The nonce the client stamped on a typed turn. A "you" beat is rendered LOCALLY the instant the
+    // player sends (optimistic), then the server persists+echoes the same beat carrying this id back;
+    // the client matches on it to reconcile the two into one (see StateStream.applyBeats) instead of
+    // showing the message twice. nil on every server-authored beat.
+    var clientId: String?
     var id: Int { i }
 
     init(from d: Decoder) throws {
@@ -204,9 +209,11 @@ struct Beat: Codable, Equatable, Identifiable {
         notation = try c.decodeIfPresent(String.self, forKey: .notation)
         boardSeq = try c.decodeIfPresent(Int.self, forKey: .boardSeq)
         ts = try c.decodeIfPresent(Double.self, forKey: .ts)
+        clientId = try c.decodeIfPresent(String.self, forKey: .clientId)
     }
     enum CodingKeys: String, CodingKey {
         case i, kind, tone, stops, segments, hints, you, correct, move, fen, notation, boardSeq, ts
+        case clientId = "client_id"
     }
 
     var isAsk: Bool { kind == "ask" }

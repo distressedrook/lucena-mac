@@ -27,9 +27,12 @@ final class CoachBridge: Sendable {
     /// Drive ONE coaching turn. `text` = the player's typed message. The coach's beats stream back
     /// down the WS while the turn runs. Fire-and-forget over the socket.
     @discardableResult
-    func sendTurn(text: String?, sessionId: String) async -> Bool {
+    func sendTurn(text: String?, sessionId: String, clientId: String? = nil) async -> Bool {
         var m: [String: Any] = ["type": "turn"]
         if let text, !text.isEmpty { m["text"] = text }
+        // The nonce the client already rendered this message under (optimistic "you" beat). The server
+        // stamps it on the persisted echo so the client can reconcile the two — see pushLocalYouBeat.
+        if let clientId { m["client_id"] = clientId }
         sendUp(m)
         return true
     }

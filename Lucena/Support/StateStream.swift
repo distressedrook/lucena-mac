@@ -256,10 +256,32 @@ final class StateStream {
         beats.append(Beat(i: i, kind: "say", tone: tone, text: text))
     }
 
+    /// Render the player's just-typed message IMMEDIATELY as a right-aligned "you" beat, before the
+    /// server has seen it. `clientId` is the nonce the caller also sends up with the turn; the server
+    /// persists the beat and echoes it back carrying the same id, and `applyBeats` reconciles the two
+    /// into one so the message never appears twice. Out-of-band `i` until the server assigns the real
+    /// one. Returns nothing — the reconciliation is by `clientId`, not by index.
+    func pushLocalYouBeat(_ text: String, clientId: String) {
+        let i = (beats.map(\.i).max() ?? 0) + 1_000_000
+        var b = Beat(i: i, kind: "you", text: text)
+        b.clientId = clientId
+        beats.append(b)
+    }
+
     private func applyBeats(_ data: Data) {
         guard let ev = try? decoder.decode(BeatsEvent.self, from: data) else { return }
-        if let snapshot = ev.beats { beats = snapshot }            // snapshot-on-connect
-        else if let appended = ev.appended { beats.append(contentsOf: appended) }  // delta
+        if let snapshot = ev.beats { beats = snapshot }            // snapshot-on-connect (server wins)
+        else if let appended = ev.appended {                       // delta
+            for beat in appended {
+                // Reconcile an optimistic "you" beat with the server's echo of it (same clientId):
+                // replace in place so the message stays a single bubble instead of doubling.
+                if let cid = beat.clientId, let idx = beats.firstIndex(where: { $0.clientId == cid }) {
+                    beats[idx] = beat
+                } else {
+                    beats.append(beat)
+                }
+            }
+        }
     }
 
     private struct BeatsEvent: Decodable {
