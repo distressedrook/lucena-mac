@@ -8,7 +8,17 @@ import Foundation
 enum ChessMove {
     /// Returns the display FEN after the move and the UCI string, or nil if the source square is
     /// empty / off-board.
-    static func apply(_ fen: String, from: String, to: String) -> (fen: String, uci: String)? {
+    /// Does this move promote a pawn (a pawn reaching the last rank)? Used to pop the piece picker
+    /// instead of silently auto-queening.
+    static func isPromotion(_ fen: String, from: String, to: String) -> Bool {
+        let parts = fen.split(separator: " ").map(String.init)
+        guard !parts.isEmpty, let (ff, fr) = coord(from), let (_, tr) = coord(to) else { return false }
+        guard let piece = parseBoard(parts[0])[fr][ff], piece == "P" || piece == "p" else { return false }
+        return tr == 7 || tr == 0
+    }
+
+    static func apply(_ fen: String, from: String, to: String,
+                      promotion: Character? = nil) -> (fen: String, uci: String)? {
         let parts = fen.split(separator: " ").map(String.init)
         guard !parts.isEmpty,
               let (ff, fr) = coord(from), let (tf, tr) = coord(to) else { return nil }
@@ -26,9 +36,10 @@ enum ChessMove {
             grid[fr][tf] = nil
         }
         grid[fr][ff] = nil
-        if isPawn, tr == 7 || tr == 0 {          // promotion (auto-queen)
-            grid[tr][tf] = white ? "Q" : "q"
-            uci += "q"
+        if isPawn, tr == 7 || tr == 0 {          // promotion — to the chosen piece (default queen)
+            let p = promotion ?? "Q"
+            grid[tr][tf] = white ? Character(p.uppercased()) : Character(p.lowercased())
+            uci += String(p).lowercased()
         } else {
             grid[tr][tf] = piece
         }
@@ -48,7 +59,7 @@ enum ChessMove {
     /// Standard algebraic notation for a (legal) move: piece letter, disambiguation, capture,
     /// destination, promotion, castling, and a check `+` / mate `#` suffix. For variation display —
     /// the mainline's SAN comes from the server. Falls back to UCI on a malformed input.
-    static func san(_ fen: String, from: String, to: String) -> String {
+    static func san(_ fen: String, from: String, to: String, promotion: Character? = nil) -> String {
         let parts = fen.split(separator: " ").map(String.init)
         guard let (ff, fr) = coord(from), let (tf, tr) = coord(to), !parts.isEmpty else { return from + to }
         let grid = parseBoard(parts[0])
@@ -68,7 +79,7 @@ enum ChessMove {
         }
         if isCapture { s += "x" }
         s += to
-        if isPawn, tr == 7 || tr == 0 { s += "=Q" }
+        if isPawn, tr == 7 || tr == 0 { s += "=" + String(promotion ?? "Q").uppercased() }
         return s + suffix
     }
 

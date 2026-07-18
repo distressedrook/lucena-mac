@@ -21,6 +21,7 @@ struct StudySessionScreen: View {
     @State private var lastMoveWrong = false       // the server said the last move was wrong → show Retry
     @State private var walker: DrillWalker?        // local mirror of the tree → instant ✓/✗ (backend confirms)
     @State private var continueBranchPending = false   // a branch is solved; opponent has other defences → Continue
+    @State private var pendingPromotion: PendingPromotion?   // a pawn hit the last rank → pick a piece
     @State private var lastMoveUci: String?        // the last played move (uci) — for the on-demand "Why?" explain
     @State private var drillBottomBlack: Bool?     // solver's side, captured from a drill; stays stable
     @State private var analysisOn = true           // the Analysis tab's live-engine toggle
@@ -455,6 +456,7 @@ struct StudySessionScreen: View {
                     // While the coach is working, an AI energy-line travels around the board.
                     if coachWorking { CoachThinkingHalo() }
                 }
+                .overlay { if pendingPromotion != nil { promotionPicker } }   // pick Q/R/B/N
                 .animation(.easeInOut(duration: 0.35), value: coachWorking)
             }
             .frame(width: totalW, alignment: .leading)
@@ -877,29 +879,47 @@ struct StudySessionScreen: View {
 
     /// Drop a piece: show the move optimistically, then let the MCP adjudicate. A wrong drill move
     /// stays on the board (Retry reverts it); a correct/non-drill move is superseded by the live board.
+    /// A pawn reaching the last rank first pops the promotion picker (no silent auto-queen).
     private func playMove(_ from: String, _ to: String) {
-        guard let applied = ChessMove.apply(displayedFen, from: from, to: to) else { return }
+        if ChessMove.isPromotion(displayedFen, from: from, to: to) {
+            pendingPromotion = PendingPromotion(from: from, to: to)   // ask which piece, then resolve
+            return
+        }
+        playMoveResolved(from, to, promotion: nil)
+    }
+
+    /// The player picked a promotion piece from the picker → play the move with it.
+    private func completePromotion(_ piece: Character) {
+        guard let p = pendingPromotion else { return }
+        pendingPromotion = nil
+        playMoveResolved(p.from, p.to, promotion: piece)
+    }
+
+    private func playMoveResolved(_ from: String, _ to: String, promotion: Character?) {
+        guard let applied = ChessMove.apply(displayedFen, from: from, to: to, promotion: promotion) else { return }
         let solve = displayedFen                      // the position being solved (before the move)
         heldWrong = applied.fen                       // optimistic — the piece moves immediately
         // Optimistic "you played" bubble too — render it the instant the move lands, don't wait for
         // the server. The verdict badge + captured-piece detail fill in when the server echo (same
         // clientId) reconciles. SAN/after-fen are computed locally (ChessMove).
-        let san = ChessMove.san(solve, from: from, to: to)
+        let san = ChessMove.san(solve, from: from, to: to, promotion: promotion)
+        let uci = applied.uci                         // includes the promotion suffix (e.g. b7b8q) — the
+                                                      // server needs it, or a bare b7b8 reads as underpromotion
         let clientId = UUID().uuidString
         // Adjudicate locally against the downloaded tree for an INSTANT badge — no /move wait. Nil
         // when there's no drill (freeform) → no badge. The backend re-adjudicates and reconciles.
-        let verdict = walker?.adjudicate(uci: from + to, san: san)
+        let verdict = walker?.adjudicate(uci: uci, san: san)
         stream?.pushLocalYouMoveBeat("Played \(san)", move: san, fen: applied.fen,
                                      correct: verdict?.correct, clientId: clientId)
         if verdict?.correct == false {                // wrong drill move → hold + Retry at once
-            solveFen = solve; lastMoveWrong = true; lastMoveUci = from + to
+            solveFen = solve; lastMoveWrong = true; lastMoveUci = uci
         }
         Task {
-            let r = await coach?.playMove(from + to, fen: solve, clientId: clientId)
+            let r = await coach?.playMove(uci, fen: solve, clientId: clientId)
             if r?.drill == true && r?.correct == false {
                 solveFen = solve                      // remember the puzzle position for Retry
                 lastMoveWrong = true                  // keep the hold; Retry appears
-                lastMoveUci = from + to               // remember the move so "Why?" can explain it
+                lastMoveUci = uci                     // remember the move so "Why?" can explain it
             } else {
                 // Correct / non-drill → the hold is dropped by onChange(board.fen) when the live board
                 // lands (no flicker). Here we only clear the drill/Retry state.
@@ -1102,6 +1122,40 @@ struct StudySessionScreen: View {
         }
     }
 
+    private var promotingWhite: Bool {
+        (displayedFen.split(separator: " ").dropFirst().first.map(String.init) ?? "w") == "w"
+    }
+
+    /// The promotion picker — a small card floated over the board with the four choices. Codes are
+    /// always uppercase (ChessMove derives the colour + lowercases for UCI); the glyph shows the side.
+    @ViewBuilder private var promotionPicker: some View {
+        let choices: [(code: Character, glyph: String)] = promotingWhite
+            ? [("Q", "♕"), ("R", "♖"), ("B", "♗"), ("N", "♘")]
+            : [("Q", "♛"), ("R", "♜"), ("B", "♝"), ("N", "♞")]
+        ZStack {
+            Rectangle().fill(Theme.Palette.ink.opacity(0.3))          // dim the board
+                .contentShape(Rectangle())
+                .onTapGesture { pendingPromotion = nil }             // tap off = cancel (nothing was played)
+            HStack(spacing: Theme.Spacing.sm) {
+                ForEach(choices, id: \.code) { c in
+                    Button { completePromotion(c.code) } label: {
+                        Text(c.glyph)
+                            .font(.system(size: 40))
+                            .foregroundStyle(Theme.Palette.ink)
+                            .frame(width: 56, height: 56)
+                            .background(Theme.Palette.paper)
+                            .overlay(Rectangle().stroke(Theme.Palette.ink, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(Theme.Spacing.md)
+            .background(Theme.Palette.paper)
+            .overlay(Rectangle().stroke(Theme.Palette.ink, lineWidth: 2))
+            .shadow(color: Theme.Palette.ink.opacity(0.5), radius: 18, x: 0, y: 10)
+        }
+    }
+
     private func chatButton(_ text: LocalizedStringKey, icon: String, background: Color,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -1300,3 +1354,6 @@ enum PieceTrack {
         .environment(\.stateStream, StateStream.stub())   // empty state — no board, no beats yet
         .frame(width: Theme.Size.windowDefault.width, height: Theme.Size.windowDefault.height)
 }
+
+/// A pawn drop that reached the last rank, awaiting the player's piece choice from the picker.
+private struct PendingPromotion { let from: String; let to: String }
