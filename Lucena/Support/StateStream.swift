@@ -272,11 +272,13 @@ final class StateStream {
     /// server adjudicates. Carries the move chip + after-move `fen` (so it's clickable at once); the
     /// verdict badge and captured-piece detail are absent here and fill in when the server's echo of
     /// this same `clientId` reconciles (a drill can't know right/wrong until the backend says so).
-    func pushLocalYouMoveBeat(_ text: String, move: String, fen: String, clientId: String) {
+    func pushLocalYouMoveBeat(_ text: String, move: String, fen: String,
+                              correct: Bool? = nil, clientId: String) {
         let i = (beats.map(\.i).max() ?? 0) + 1_000_000
         var b = Beat(i: i, kind: "you", text: text)
         b.move = move
         b.fen = fen
+        b.correct = correct     // the drill verdict, adjudicated locally (nil = freeform, no badge)
         b.clientId = clientId
         beats.append(b)
     }

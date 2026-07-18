@@ -19,6 +19,7 @@ struct StudySessionScreen: View {
     @State private var heldWrong: String?          // a wrong drill move, held on the board until Retry
     @State private var solveFen: String?           // the position to return to on Retry (survives coach repaints)
     @State private var lastMoveWrong = false       // the server said the last move was wrong → show Retry
+    @State private var walker: DrillWalker?        // local mirror of the tree → instant ✓/✗ (backend confirms)
     @State private var lastMoveUci: String?        // the last played move (uci) — for the on-demand "Why?" explain
     @State private var drillBottomBlack: Bool?     // solver's side, captured from a drill; stays stable
     @State private var analysisOn = true           // the Analysis tab's live-engine toggle
@@ -741,6 +742,7 @@ struct StudySessionScreen: View {
     /// A fresh drill: reset retry/poisoned-line state and drop the old line's variations.
     private func resetForNewDrill() {
         heldWrong = nil; solveFen = nil; lastMoveWrong = false
+        walker = stream?.drill.map(DrillWalker.init)   // fresh local walk from the new tree's root
         // Seed "this drill has a trap" from the NEW drill's current flag, do NOT just zero it: the
         // onChange(hasPoisonedLine) latch only fires on a VALUE change, so re-arming the SAME poisoned
         // position (true→true) would never re-latch, and the post-solve "show me the trap" nudge would
@@ -760,7 +762,7 @@ struct StudySessionScreen: View {
 
     /// The board was cleared (session reset): drop sticky orientation + retry/poisoned-line state.
     private func resetOnBoardCleared() {
-        drillBottomBlack = nil; solveFen = nil; heldWrong = nil; lastMoveWrong = false
+        drillBottomBlack = nil; solveFen = nil; heldWrong = nil; lastMoveWrong = false; walker = nil
         hadPoisonedLine = false; poisonedLineNudge = false; baseConceptClosed = false
         latchedPoisonedLine = nil; latchedPoisonedFrom = nil
         variations.removeAll(); clearVariationCursor()
@@ -878,7 +880,14 @@ struct StudySessionScreen: View {
         // clientId) reconciles. SAN/after-fen are computed locally (ChessMove).
         let san = ChessMove.san(solve, from: from, to: to)
         let clientId = UUID().uuidString
-        stream?.pushLocalYouMoveBeat("Played \(san)", move: san, fen: applied.fen, clientId: clientId)
+        // Adjudicate locally against the downloaded tree for an INSTANT badge — no /move wait. Nil
+        // when there's no drill (freeform) → no badge. The backend re-adjudicates and reconciles.
+        let verdict = walker?.adjudicate(uci: from + to, san: san)
+        stream?.pushLocalYouMoveBeat("Played \(san)", move: san, fen: applied.fen,
+                                     correct: verdict?.correct, clientId: clientId)
+        if verdict?.correct == false {                // wrong drill move → hold + Retry at once
+            solveFen = solve; lastMoveWrong = true; lastMoveUci = from + to
+        }
         Task {
             let r = await coach?.playMove(from + to, fen: solve, clientId: clientId)
             if r?.drill == true && r?.correct == false {
