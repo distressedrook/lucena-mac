@@ -108,16 +108,19 @@ private struct BeatRow: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.Palette.ink45)
             HStack(spacing: Theme.Spacing.xs) {
-                if let correct { verdictBadge(correct) }   // drill move → green check / red cross box
                 if let move, let fen {                     // a played move → clickable navigator-style chip
                     Text(Strings.StudySession.played)
                         .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
-                    moveChip(move) { onMoveTap(fen) }
+                    HStack(spacing: 0) {                   // verdict badge ABUTS the move — a stamp on it
+                        moveChip(move) { onMoveTap(fen) }
+                        if let correct { verdictBadge(correct) }   // green check / red cross, touching
+                    }
                     if let sfx = suffix(of: text, after: move), !sfx.isEmpty {
                         Text(verbatim: sfx)
                             .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
                     }
                 } else {
+                    if let correct { verdictBadge(correct) }   // no move (typed answer) → badge stands alone
                     Text(text)                             // plain text, no bubble box; same size as the coach
                         .font(Theme.Typography.coachBody)
                         .foregroundStyle(Theme.Palette.ink82)
@@ -134,8 +137,8 @@ private struct BeatRow: View {
         Text(verbatim: MoveListStyle.figurine(move))
             .font(Theme.Typography.move)
             .foregroundStyle(Theme.Palette.paper)
-            .padding(.vertical, Theme.Spacing.xxs)
             .padding(.horizontal, Theme.Spacing.xs)
+            .frame(height: Self.badgeSide)             // match the verdict badge so they abut flush
             .background(Theme.Palette.ink)
             .contentShape(Rectangle())
             .onTapGesture(perform: action)
@@ -149,11 +152,13 @@ private struct BeatRow: View {
 
     /// The drill verdict next to a played move: a solid square — green with a check (right) or red with
     /// a cross (wrong). Replaces the canned "That's right!" / "not quite" feedback beat.
+    private static let badgeSide: CGFloat = 24          // shared by the move chip so the two abut flush
+
     private func verdictBadge(_ correct: Bool) -> some View {
         Image(systemName: correct ? "checkmark" : "xmark")
             .font(.system(size: 12, weight: .heavy))
             .foregroundStyle(Theme.Palette.paper)
-            .frame(width: 24, height: 24)
+            .frame(width: Self.badgeSide, height: Self.badgeSide)
             .background(correct ? Theme.Palette.correctGreen : Theme.Palette.mistakeRed)
     }
 }
