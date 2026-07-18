@@ -898,6 +898,13 @@ struct StudySessionScreen: View {
     private func playMoveResolved(_ from: String, _ to: String, promotion: Character?) {
         guard let applied = ChessMove.apply(displayedFen, from: from, to: to, promotion: promotion) else { return }
         let solve = displayedFen                      // the position being solved (before the move)
+        // A NEW attempt supersedes the prior Retry-guard. `solveFen` pins the board on the puzzle root
+        // through a late coach repaint after Retry, but it OUTRANKS the move line in `displayedFen` — so
+        // if it lingers into this move, the instant the optimistic hold drops on the server's board it
+        // re-shows the puzzle root for a beat (the "wrong → Retry → right flashes the original" bug).
+        // Clear it now; a wrong move re-arms it below. (The move itself is applied to `solve`, captured
+        // above, so this doesn't change what's played.)
+        solveFen = nil; lastMoveWrong = false
         heldWrong = applied.fen                       // optimistic — the piece moves immediately
         // Optimistic "you played" bubble too — render it the instant the move lands, don't wait for
         // the server. The verdict badge + captured-piece detail fill in when the server echo (same
