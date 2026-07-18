@@ -132,9 +132,14 @@ struct MoveResult: Decodable {
     var drill: Bool
     var correct: Bool?
     var finished: Bool?
+    // A drill branch is solved but the opponent has other defences — HELD behind a Continue button.
+    // The board stays on the solution; clicking Continue walks the next branch (server-side backtrack).
+    var awaitContinue: Bool?
 
-    init(ok: Bool = false, drill: Bool = false, correct: Bool? = nil, finished: Bool? = nil) {
+    init(ok: Bool = false, drill: Bool = false, correct: Bool? = nil, finished: Bool? = nil,
+         awaitContinue: Bool? = nil) {
         self.ok = ok; self.drill = drill; self.correct = correct; self.finished = finished
+        self.awaitContinue = awaitContinue
     }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -142,8 +147,9 @@ struct MoveResult: Decodable {
         drill = try c.decodeIfPresent(Bool.self, forKey: .drill) ?? false
         correct = try c.decodeIfPresent(Bool.self, forKey: .correct)
         finished = try c.decodeIfPresent(Bool.self, forKey: .finished)
+        awaitContinue = try c.decodeIfPresent(Bool.self, forKey: .awaitContinue)
     }
-    enum CodingKeys: String, CodingKey { case ok, drill, correct, finished }
+    enum CodingKeys: String, CodingKey { case ok, drill, correct, finished, awaitContinue }
 }
 
 struct Arrow: Codable, Equatable, Identifiable {

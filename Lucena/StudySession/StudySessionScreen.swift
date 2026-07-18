@@ -20,6 +20,7 @@ struct StudySessionScreen: View {
     @State private var solveFen: String?           // the position to return to on Retry (survives coach repaints)
     @State private var lastMoveWrong = false       // the server said the last move was wrong → show Retry
     @State private var walker: DrillWalker?        // local mirror of the tree → instant ✓/✗ (backend confirms)
+    @State private var continueBranchPending = false   // a branch is solved; opponent has other defences → Continue
     @State private var lastMoveUci: String?        // the last played move (uci) — for the on-demand "Why?" explain
     @State private var drillBottomBlack: Bool?     // solver's side, captured from a drill; stays stable
     @State private var analysisOn = true           // the Analysis tab's live-engine toggle
@@ -746,7 +747,7 @@ struct StudySessionScreen: View {
 
     /// A fresh drill: reset retry/poisoned-line state and drop the old line's variations.
     private func resetForNewDrill() {
-        heldWrong = nil; solveFen = nil; lastMoveWrong = false
+        heldWrong = nil; solveFen = nil; lastMoveWrong = false; continueBranchPending = false
         walker = stream?.drill.map(DrillWalker.init)   // fresh local walk from the new tree's root
         // Seed "this drill has a trap" from the NEW drill's current flag, do NOT just zero it: the
         // onChange(hasPoisonedLine) latch only fires on a VALUE change, so re-arming the SAME poisoned
@@ -767,7 +768,7 @@ struct StudySessionScreen: View {
 
     /// The board was cleared (session reset): drop sticky orientation + retry/poisoned-line state.
     private func resetOnBoardCleared() {
-        drillBottomBlack = nil; solveFen = nil; heldWrong = nil; lastMoveWrong = false; walker = nil
+        drillBottomBlack = nil; solveFen = nil; heldWrong = nil; lastMoveWrong = false; walker = nil; continueBranchPending = false
         hadPoisonedLine = false; poisonedLineNudge = false; baseConceptClosed = false
         latchedPoisonedLine = nil; latchedPoisonedFrom = nil
         variations.removeAll(); clearVariationCursor()
@@ -904,6 +905,9 @@ struct StudySessionScreen: View {
                 // lands (no flicker). Here we only clear the drill/Retry state.
                 solveFen = nil
                 lastMoveWrong = false
+                // Solved a branch with sibling defences remaining → surface Continue; the board stays on
+                // the solution and the next branch is walked only on click (server does the backtrack).
+                continueBranchPending = (r?.awaitContinue == true)
                 // Solved the whole drill → let the MCP know, so the coach gives a grounded closing.
                 if r?.drill == true && r?.finished == true {
                     await coach?.drillSolved(fen: board?.fen ?? solve)
@@ -1038,8 +1042,15 @@ struct StudySessionScreen: View {
         // The back-to-previous-concept buttons are gated behind the feature flag (disabled for now), so
         // their triggers (rabbit-hole depth / a just-closed base concept) don't render the action row.
         let showBack = Self.showBackToPreviousConcept && ((stream?.activityDepth ?? 1) > 1 || baseConceptClosed)
-        if lastMoveWrong || poisonedLineNudge || showBack {
+        if lastMoveWrong || poisonedLineNudge || showBack || continueBranchPending {
             HStack(spacing: Theme.Spacing.md) {
+                if continueBranchPending {
+                    // Solved this branch — walk the opponent's next defence on click (server backtracks).
+                    chatButton("Continue", icon: Theme.Symbol.chevronRight, background: Theme.Palette.coachBlue) {
+                        continueBranchPending = false
+                        coach?.continueBranch()
+                    }
+                }
                 if Self.showBackToPreviousConcept {
                     if (stream?.activityDepth ?? 1) > 1 {
                         // Inside a rabbit-hole activity — offer to go back to what the player was looking at.

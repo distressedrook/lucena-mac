@@ -82,6 +82,12 @@ final class CoachBridge: Sendable {
         await submit(["kind": "drill_solved", "fen": fen])
     }
 
+    /// The player clicked Continue on a solved branch — walk the next sibling defence. The server does
+    /// the deferred backtrack and streams the new board + beats.
+    func continueBranch() {
+        sendUp(["type": "continue"])
+    }
+
     /// Submit an arbitrary structured input dict verbatim (stored for the orchestrator's read_input).
     func submit(_ payload: [String: Any]) async {
         sendUp(["type": "input", "data": payload])
