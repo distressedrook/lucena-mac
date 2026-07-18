@@ -1126,23 +1126,23 @@ struct StudySessionScreen: View {
         (displayedFen.split(separator: " ").dropFirst().first.map(String.init) ?? "w") == "w"
     }
 
-    /// The promotion picker — a small card floated over the board with the four choices. Codes are
-    /// always uppercase (ChessMove derives the colour + lowercases for UCI); the glyph shows the side.
+    /// The promotion picker — a small card floated over the board with the four choices, drawn with the
+    /// SAME piece art as the board (assets "wQ"/"bN"/…). Codes are always uppercase (ChessMove derives
+    /// the colour + lowercases for UCI).
     @ViewBuilder private var promotionPicker: some View {
-        let choices: [(code: Character, glyph: String)] = promotingWhite
-            ? [("Q", "♕"), ("R", "♖"), ("B", "♗"), ("N", "♘")]
-            : [("Q", "♛"), ("R", "♜"), ("B", "♝"), ("N", "♞")]
+        let side = promotingWhite ? "w" : "b"
+        let choices: [Character] = ["Q", "R", "B", "N"]
         ZStack {
             Rectangle().fill(Theme.Palette.ink.opacity(0.3))          // dim the board
                 .contentShape(Rectangle())
                 .onTapGesture { pendingPromotion = nil }             // tap off = cancel (nothing was played)
             HStack(spacing: Theme.Spacing.sm) {
-                ForEach(choices, id: \.code) { c in
-                    Button { completePromotion(c.code) } label: {
-                        Text(c.glyph)
-                            .font(.system(size: 40))
-                            .foregroundStyle(Theme.Palette.ink)
-                            .frame(width: 56, height: 56)
+                ForEach(choices, id: \.self) { code in
+                    Button { completePromotion(code) } label: {
+                        Image("\(side)\(code)")                       // same asset the board renders
+                            .resizable().interpolation(.high).scaledToFit()
+                            .frame(width: 52, height: 52)
+                            .frame(width: 60, height: 60)
                             .background(Theme.Palette.paper)
                             .overlay(Rectangle().stroke(Theme.Palette.ink, lineWidth: 1.5))
                     }
