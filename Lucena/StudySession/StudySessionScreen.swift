@@ -873,8 +873,14 @@ struct StudySessionScreen: View {
         guard let applied = ChessMove.apply(displayedFen, from: from, to: to) else { return }
         let solve = displayedFen                      // the position being solved (before the move)
         heldWrong = applied.fen                       // optimistic — the piece moves immediately
+        // Optimistic "you played" bubble too — render it the instant the move lands, don't wait for
+        // the server. The verdict badge + captured-piece detail fill in when the server echo (same
+        // clientId) reconciles. SAN/after-fen are computed locally (ChessMove).
+        let san = ChessMove.san(solve, from: from, to: to)
+        let clientId = UUID().uuidString
+        stream?.pushLocalYouMoveBeat("Played \(san)", move: san, fen: applied.fen, clientId: clientId)
         Task {
-            let r = await coach?.playMove(from + to, fen: solve)
+            let r = await coach?.playMove(from + to, fen: solve, clientId: clientId)
             if r?.drill == true && r?.correct == false {
                 solveFen = solve                      // remember the puzzle position for Retry
                 lastMoveWrong = true                  // keep the hold; Retry appears

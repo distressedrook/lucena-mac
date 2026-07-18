@@ -183,10 +183,12 @@ final class CoachBridge: Sendable {
 
     /// Push a raw played move for drill adjudication. (Backend `/move` follow-up.)
     @discardableResult
-    func playMove(_ uci: String, fen: String) async -> MoveResult {
+    func playMove(_ uci: String, fen: String, clientId: String? = nil) async -> MoveResult {
         var req = request("move", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["uci": uci, "fen": fen])
+        var body: [String: Any] = ["uci": uci, "fen": fen]
+        if let clientId { body["client_id"] = clientId }   // reconciles the optimistic "you played" bubble
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         guard let data = await perform(req).data else { return MoveResult() }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

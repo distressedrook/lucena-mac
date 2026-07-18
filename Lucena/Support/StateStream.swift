@@ -268,6 +268,19 @@ final class StateStream {
         beats.append(b)
     }
 
+    /// Render the player's just-played BOARD move immediately as a "you played" bubble, before the
+    /// server adjudicates. Carries the move chip + after-move `fen` (so it's clickable at once); the
+    /// verdict badge and captured-piece detail are absent here and fill in when the server's echo of
+    /// this same `clientId` reconciles (a drill can't know right/wrong until the backend says so).
+    func pushLocalYouMoveBeat(_ text: String, move: String, fen: String, clientId: String) {
+        let i = (beats.map(\.i).max() ?? 0) + 1_000_000
+        var b = Beat(i: i, kind: "you", text: text)
+        b.move = move
+        b.fen = fen
+        b.clientId = clientId
+        beats.append(b)
+    }
+
     private func applyBeats(_ data: Data) {
         guard let ev = try? decoder.decode(BeatsEvent.self, from: data) else { return }
         if let snapshot = ev.beats { beats = snapshot }            // snapshot-on-connect (server wins)
