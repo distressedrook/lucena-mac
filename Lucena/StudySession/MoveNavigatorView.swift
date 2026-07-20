@@ -71,6 +71,7 @@ struct MoveNavigatorView: View {
     /// just before it. The root "…" block has no number.
     private func numberLabel(_ i: Int, _ move: LineMove) -> String? {
         if move.san == nil && move.uci == nil { return nil }   // the "…" start block
+        if move.uci == nil && move.san == "?" { return nil }   // the "?" solve placeholder — no number
         if move.whiteMoved { return "\(move.number)." }
         let pairsWithPriorWhite = i > 0 && line[i - 1].whiteMoved
         return pairsWithPriorWhite ? nil : "\(move.number)…"
@@ -117,18 +118,23 @@ struct MoveNavigatorView: View {
 }
 
 /// One row of the variation picker — styled like the settings menu's rows (hover, uppercase, divider).
+/// A `wrong` row carries the same red ✗ badge the chat pane shows on a mistaken move.
 private struct VariationRow: View {
     let text: String
     let divider: Bool
+    var wrong: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(verbatim: text)
-                .font(Theme.Typography.move)
-                .foregroundStyle(Theme.Palette.ink)
-                .lineLimit(1)
+            HStack(spacing: 8) {
+                if wrong { wrongBadge }
+                Text(verbatim: text)
+                    .font(Theme.Typography.move)
+                    .foregroundStyle(Theme.Palette.ink)
+                    .lineLimit(1)
+            }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 9).padding(.horizontal, 14)
                 .background(hovering ? Theme.Palette.paperDeep : Theme.Palette.paper)
@@ -139,6 +145,15 @@ private struct VariationRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+
+    // Matches the chat's verdict cross: a small red square with a paper xmark.
+    private var wrongBadge: some View {
+        Image(systemName: "xmark")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(Theme.Palette.paper)
+            .frame(width: 14, height: 14)
+            .background(Theme.Palette.mistakeRed)
     }
 }
 
@@ -183,6 +198,7 @@ struct CaretAnchorKey: PreferenceKey {
 struct VariationMenu: View {
     let nodes: [VarNode]
     var backLabel: String? = nil          // when in a variation: "← <the line it branched from>"
+    var isWrong: (VarNode) -> Bool = { _ in false }   // this variation is a mistaken try → red ✗
     let onPick: (VarNode) -> Void
     var onBack: () -> Void = {}
 
@@ -192,7 +208,8 @@ struct VariationMenu: View {
                 VariationRow(text: "←  " + backLabel, divider: !nodes.isEmpty, action: onBack)
             }
             ForEach(Array(nodes.enumerated()), id: \.element.id) { j, node in
-                VariationRow(text: MoveListStyle.numbered(node.line), divider: j < nodes.count - 1) {
+                VariationRow(text: MoveListStyle.numbered(node.line), divider: j < nodes.count - 1,
+                             wrong: isWrong(node)) {
                     onPick(node)
                 }
             }

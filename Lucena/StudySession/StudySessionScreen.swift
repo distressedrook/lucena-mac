@@ -19,10 +19,14 @@ struct StudySessionScreen: View {
     @State private var heldWrong: String?          // a wrong drill move, held on the board until Retry
     @State private var solveFen: String?           // the position to return to on Retry (survives coach repaints)
     @State private var lastMoveWrong = false       // the server said the last move was wrong → show Retry
+    @State private var lastMoveUci: String?        // the held wrong move (uci) — for the on-demand "Why?"
+    @State private var expectCoachBeat = true      // a MOVE produces no coach beat now (✓+local praise /
+                                                   // ✗+Why?) — only a text turn / Why? expects one, so the
+                                                   // silent-turn "Uh oh" net must skip moves
     @State private var walker: DrillWalker?        // local mirror of the tree → instant ✓/✗ (backend confirms)
+    @State private var localLine: [Ply]?           // client-owned move line during a local drill (nil = server's)
     @State private var continueBranchPending = false   // a branch is solved; opponent has other defences → Continue
     @State private var pendingPromotion: PendingPromotion?   // a pawn hit the last rank → pick a piece
-    @State private var lastMoveUci: String?        // the last played move (uci) — for the on-demand "Why?" explain
     @State private var drillBottomBlack: Bool?     // solver's side, captured from a drill; stays stable
     @State private var analysisOn = true           // the Analysis tab's live-engine toggle
     @State private var analyzeTask: Task<Void, Never>?   // debounces /analyze as the position changes
@@ -45,6 +49,7 @@ struct StudySessionScreen: View {
     // returns, before the beat arrives, which flashed the "Uh oh" fallback and skipped the halo.
     private var coachWorking: Bool { stream?.coachStatus != nil }   // drives the board halo + status row
     @State private var beatsAtWorkStart = 0         // beat count when the coach started → detect a silent turn
+    @State private var activityAtWorkStart = 0      // active-activity idx when the coach started → a switch ≠ silent
     private let evalGearRowH: CGFloat = 22          // the settings strip above the board; beats matches it
     @State private var sessionOrder: [String] = []  // frozen rail order — sorted by recency once, then stable
     @State private var shownEvalFraction: Double = 0.5   // held eval fill — animates, never snaps to parity
@@ -59,19 +64,79 @@ struct StudySessionScreen: View {
     @State private var collapseTo: Int? = nil             // Back phase 1: truncate the line to this index
     @State private var openCaret: OpenCaret? = nil        // the caret whose variation menu is floating
     @State private var hoveringPopover = false            // cursor is over the variation card (don't dismiss)
+    // Multi-defence "Continue": the opponent's other defences are drilled as SIDE-LINES. When you click
+    // Continue the sibling defence opens as a variation you're IN and solving (the mainline stays the
+    // line you already solved). `solvingSiblingBranch` routes board moves through the drill adjudicator
+    // into that variation — where a wrong move holds + parks under "?", exactly like the mainline.
+    @State private var solvingSiblingBranch = false
+    // The tree's accepted student move(s) at each position (normalized fen -> uci set), built from the
+    // PuzzleDoc when a drill loads. A variation whose move isn't the accepted move at the spot it
+    // branches from IS a wrong try — so "wrongness" is DERIVED (no persisted flag) and survives reopen
+    // for free, since the tree is re-downloaded every time.
+    @State private var solutionUci: [String: Set<String>] = [:]
 
-    struct OpenCaret { let id: String; let index: Int; let nodes: [VarNode]; var backLabel: String? = nil }
+    struct OpenCaret { let id: String; let index: Int; let nodes: [VarNode]; var backLabel: String? = nil; var branchFen: String = "" }
     @FocusState private var boardFocused: Bool     // arrow keys navigate when the board holds focus
 
     // The MCP owns the board: it walks the drill tree, advances on a correct move, holds on a wrong
     // one, and pushes every beat. The app just renders the stream; before the coach sets a board we
     // show the opening (the honest "no game yet" state), never a stand-in position.
     private var board: BoardState? { stream?.board }
-    private var history: [Ply] { stream?.history ?? [] }
+    // During a local drill the CLIENT owns the move line (`localLine`) — it plays the student's move +
+    // the opponent's reply into it with no `/move` round-trip. Otherwise it's the server's line.
+    private var history: [Ply] { localLine ?? (stream?.history ?? []) }
     private var liveIndex: Int { max(0, history.count - 1) }     // the latest ply
     private var currentPlyIndex: Int { viewIndex ?? liveIndex }  // the ply being viewed/highlighted
     private var isViewingHistory: Bool { viewIndex != nil }
     private var isInVariation: Bool { !varStack.isEmpty }        // exploring a "what if" line off the mainline
+    // A drill answer typed INTO a sibling variation: we're solving that branch and sitting at its tip
+    // (its own move to find), so the move goes through the adjudicator, not the explore path.
+    private var drillMoveInVariation: Bool {
+        solvingSiblingBranch && isInVariation && varCursor == displayLine.count - 1
+    }
+
+    /// The side-to-move character ('w'/'b') of a FEN.
+    private func sideChar(_ fen: String) -> Character? {
+        fen.split(separator: " ").dropFirst().first?.first
+    }
+    /// The solver's side in a puzzle: whoever is to move at the ROOT (a puzzle always starts on the
+    /// solver's move). Nil outside a puzzle, so freeform keeps both sides movable.
+    private var solverSide: Character? {
+        guard drillGoverns, let root = history.first?.fen else { return nil }
+        return sideChar(root)
+    }
+    /// In a puzzle, is it the OPPONENT's turn at the shown position? Their moves are the fixed line —
+    /// the board must be read-only for them; you only ever input moves as the solver.
+    private var opponentToMoveInPuzzle: Bool {
+        guard let solver = solverSide, let cur = sideChar(displayedFen) else { return false }
+        return cur != solver
+    }
+
+    /// While solving, the position awaiting the answer (the live tip) — but ONLY when wrong tries are
+    /// parked there. That's where the "?" placeholder + its wrong-variation caret live, until the correct
+    /// move is played, at which point the wrong tries become the caret siblings of the real move (the
+    /// forest is position-keyed, so that resolution is automatic).
+    private var solvingFen: String? {
+        guard drillGoverns else { return nil }
+        // Must be sitting at the LIVE solving tip (not browsing back): the mainline tip, or — when
+        // drilling a sibling side-line — that side-line's tip. Wrong tries park there under the "?".
+        if isInVariation {
+            guard solvingSiblingBranch, varCursor == displayLine.count - 1 else { return nil }
+        } else {
+            guard !isViewingHistory else { return nil }
+        }
+        guard let tip = displayLine.last?.fen, variations.has(tip) else { return nil }
+        return tip
+    }
+    /// The strip's line plus a trailing "?" placeholder for the not-yet-played correct move, shown when
+    /// wrong tries are parked at the solving position. Display-only — navigation math still uses displayLine.
+    private var navigatorLine: [LineMove] {
+        guard let solve = solvingFen else { return displayLine }
+        return displayLine + [LineMove(id: "solve-placeholder", san: "?", uci: nil, fen: solve,
+                                       isBranch: false, node: nil, mainPly: nil)]
+    }
+    /// Index of the "?" placeholder in `navigatorLine` (-1 when there is none).
+    private var placeholderIndex: Int { solvingFen == nil ? -1 : displayLine.count }
 
     /// Build the full line for a given segment stack: the mainline prefix flowing into each chosen
     /// sideline (divergence move flagged `isBranch`). `varStack` gives the shown line; a shorter stack
@@ -104,6 +169,9 @@ struct StudySessionScreen: View {
     // Board precedence: an active variation > browsing history > a held wrong move > the Retry solve
     // position (after Retry, preserved even if the coach repaints) > the live board.
     private var displayedFen: String {
+        // A wrong try inside a sibling side-line holds optimistically, just like the mainline — show it
+        // over the side-line tip (else the variation branch below would swallow the hold).
+        if solvingSiblingBranch, let held = heldWrong { return held }
         if isInVariation {
             let l = displayLine
             return l.indices.contains(varCursor) ? l[varCursor].fen : (board?.fen ?? BoardState.startFEN)
@@ -231,6 +299,7 @@ struct StudySessionScreen: View {
                 if let oc = openCaret, let anchor = anchors[oc.id] {
                     let rect = proxy[anchor]
                     VariationMenu(nodes: oc.nodes, backLabel: oc.backLabel,
+                                  isWrong: { isWrongTry(branchFen: oc.branchFen, $0) },
                                   onPick: { node in enterVariation(at: oc.index - 1, node: node); openCaret = nil },
                                   onBack: { switchToParent() })
                     .fixedSize()
@@ -345,7 +414,12 @@ struct StudySessionScreen: View {
         .onChange(of: coachWorking) { _, working in
             if working {
                 beatsAtWorkStart = beats.count
-            } else if beats.count == beatsAtWorkStart {
+                activityAtWorkStart = stream?.activeIdx ?? 0
+            } else if beats.count == beatsAtWorkStart && expectCoachBeat
+                        && (stream?.activeIdx ?? 0) == activityAtWorkStart {
+                // …but NOT if the turn switched activities (e.g. a pasted position that IS a puzzle →
+                // enters the puzzle surface and presents there). The beat landed in the new frame, so a
+                // same-frame count comparison reads a false "silent turn". A frame switch is never silent.
                 stream?.pushLocalBeat("Uh oh, I didn't catch that. Please check the box below for more details.")
             }
         }
@@ -414,12 +488,17 @@ struct StudySessionScreen: View {
 
     private func freshSession() -> String { UUID().uuidString.lowercased() }
 
+    /// We're viewing a saved/live ACTIVITY (a puzzle), not the base conversation. Drives the distinct
+    /// coach pane (the board + rail never change): entering an activity transitions the COACH PANE to
+    /// the puzzle's conversation, leaving returns it to the session's.
+    private var inActivity: Bool { (stream?.activeIdx ?? 0) > 0 }
+
     private var content: some View {
         VStack(spacing: 0) {
             GeometryReader { geo in
                 HStack(alignment: .top, spacing: Theme.Spacing.xl) {
-                    boardColumn(height: geo.size.height)
-                    beatsColumn(columnHeight: geo.size.height)
+                    boardColumn(height: geo.size.height)          // board — SAME in session and puzzle
+                    beatsColumn(columnHeight: geo.size.height)    // coach pane — this is what transitions
                 }
             }
             .padding(.top, Theme.Size.bodyTopGap)
@@ -463,9 +542,11 @@ struct StudySessionScreen: View {
                     // (a drag there would post a stray move), nor while browsing history / holding a
                     // wrong move (that resolves via Retry).
                     // Live at the mainline tip → a drill answer (playMove). Browsing history or inside a
-                    // variation → a "what if" variation move (playVariation, local). Placeholder board or
-                    // a held wrong move → locked.
-                    onMove: (board == nil || heldWrong != nil) ? nil
+                    // variation → a "what if" variation move (playVariation, local). Placeholder board, a
+                    // held wrong move, OR the OPPONENT's turn in a puzzle (their replies are the fixed
+                    // line — read-only; you only ever move as the solver) → locked.
+                    onMove: (board == nil || heldWrong != nil || opponentToMoveInPuzzle) ? nil
+                        : drillMoveInVariation ? playDrillVariation
                         : (isViewingHistory || isInVariation) ? playVariation : playMove,
                     pieceIds: currentPieceIds   // stable ids while viewing the line → steps slide, don't remap
                 )
@@ -497,19 +578,30 @@ struct StudySessionScreen: View {
             // The navigator is the column's last element, so its bottom edge lands at the column foot
             // (= the terminal's bottom). navReserve keeps it there even with the gear under the bar.
             MoveNavigatorView(
-                line: displayLine, cursor: lineCursor, inVariation: isInVariation,
-                hasVariations: { hasAlternatives($0) },
+                line: navigatorLine, cursor: lineCursor, inVariation: isInVariation,
+                // The "?" placeholder always "has variations" — its wrong tries. (Same gold underline.)
+                hasVariations: { $0 == placeholderIndex ? true : hasAlternatives($0) },
                 onSelect: { i in
                     // Jump the board to a move in the shown line. Not wrapped in withAnimation → a random
                     // jump snaps (no multi-piece slide). On the mainline, the last move can go "live".
-                    if isInVariation { varCursor = i }
+                    if i == placeholderIndex {                     // "?" → show the solving position (live tip)
+                        if isInVariation { varCursor = displayLine.count - 1 } else { viewIndex = nil }
+                    }
+                    else if isInVariation { varCursor = i }
                     else {
                         viewIndex = (i >= liveIndex && history.indices.contains(i)
                                      && history[i].fen == board?.fen) ? nil : i
                     }
                 },
                 onCaretTap: { id, idx in
-                    openCaret = (openCaret?.id == id) ? nil : makeOpenCaret(id: id, lineIndex: idx)
+                    if idx == placeholderIndex {
+                        // The "?" caret lists every wrong try parked at the solving position.
+                        openCaret = (openCaret?.id == id) ? nil
+                            : OpenCaret(id: id, index: idx, nodes: variations.at(solvingFen ?? ""),
+                                        branchFen: solvingFen ?? "")
+                    } else {
+                        openCaret = (openCaret?.id == id) ? nil : makeOpenCaret(id: id, lineIndex: idx)
+                    }
                 },
                 onBack: variationBack,
                 onCancel: variationCancel
@@ -635,7 +727,8 @@ struct StudySessionScreen: View {
     private func hasAlternatives(_ i: Int) -> Bool { alternativesInfo(i) != nil }
     private func makeOpenCaret(id: String, lineIndex i: Int) -> OpenCaret? {
         guard let info = alternativesInfo(i) else { return nil }
-        return OpenCaret(id: id, index: i, nodes: info.nodes, backLabel: info.backLabel)
+        let before = displayLine.indices.contains(i - 1) ? displayLine[i - 1].fen : ""
+        return OpenCaret(id: id, index: i, nodes: info.nodes, backLabel: info.backLabel, branchFen: before)
     }
 
     /// "← parent" from the popover — switch to the line M branched away from, landing on its move here.
@@ -737,7 +830,10 @@ struct StudySessionScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
             withAnimation(.easeOut(duration: 0.18)) {
                 varStack.removeLast()
-                if varStack.isEmpty { viewIndex = seg.branchLineIndex >= liveIndex ? nil : seg.branchLineIndex }
+                if varStack.isEmpty {
+                    viewIndex = seg.branchLineIndex >= liveIndex ? nil : seg.branchLineIndex
+                    solvingSiblingBranch = false   // back on the mainline → drill over
+                }
                 collapseTo = nil
             }
         }
@@ -747,6 +843,7 @@ struct StudySessionScreen: View {
     private func variationCancel() {
         let mainIdx = varStack.first?.branchLineIndex
         varStack = []; varCursor = 0; collapseTo = nil; openCaret = nil
+        solvingSiblingBranch = false   // leaving the sibling drill
         if let m = mainIdx { viewIndex = m >= liveIndex ? nil : m }
     }
 
@@ -762,12 +859,28 @@ struct StudySessionScreen: View {
     }
 
     /// Drop out of any variation (used when the drill/board resets under us).
-    private func clearVariationCursor() { varStack = []; varCursor = 0; collapseTo = nil; openCaret = nil }
+    private func clearVariationCursor() {
+        varStack = []; varCursor = 0; collapseTo = nil; openCaret = nil
+        solvingSiblingBranch = false
+    }
 
     /// A fresh drill: reset retry/poisoned-line state and drop the old line's variations.
     private func resetForNewDrill() {
         heldWrong = nil; solveFen = nil; lastMoveWrong = false; continueBranchPending = false
         walker = stream?.drill.map(DrillWalker.init)   // fresh local walk from the new tree's root
+        // Own the move line for a local drill: seed from the server's line (the restored line on a reopen,
+        // or [root] on a fresh puzzle); if that hasn't landed yet, fall back to the tree's root so the line
+        // is NEVER empty (an empty line blanked the board before). No walker → hand it back to the server.
+        if let d = stream?.drill {
+            let srv = stream?.history ?? []
+            localLine = srv.isEmpty ? [Ply(n: 0, san: nil, uci: nil, fen: d.fen)] : srv
+            var map: [String: Set<String>] = [:]           // the tree's accepted moves per position
+            Self.collectSolutionMoves(d.root, into: &map)
+            solutionUci = map
+        } else {
+            localLine = nil
+            solutionUci = [:]
+        }
         // Seed "this drill has a trap" from the NEW drill's current flag, do NOT just zero it: the
         // onChange(hasPoisonedLine) latch only fires on a VALUE change, so re-arming the SAME poisoned
         // position (true→true) would never re-latch, and the post-solve "show me the trap" nudge would
@@ -776,6 +889,35 @@ struct StudySessionScreen: View {
         poisonedLineNudge = false; baseConceptClosed = false
         latchedPoisonedLine = nil; latchedPoisonedFrom = nil   // the poisoned line belongs to the old drill
         variations.removeAll(); clearVariationCursor()
+    }
+
+    /// Walk the solution tree, recording the accepted student move(s) at each solving position (keyed by
+    /// normalized fen). Solve nodes accept one move; mate nodes accept any listed mating move.
+    private static func collectSolutionMoves(_ node: PuzzleNode, into map: inout [String: Set<String>]) {
+        switch node.kind {
+        case "solve":
+            if let fen = node.fen, let uci = node.expectUci { map[VariationForest.norm(fen), default: []].insert(uci) }
+            if let after = node.after { collectSolutionMoves(after, into: &map) }
+        case "mate":
+            if let fen = node.fen {
+                for o in node.options ?? [] { map[VariationForest.norm(fen), default: []].insert(o.uci) }
+            }
+            for o in node.options ?? [] { collectSolutionMoves(o.then, into: &map) }
+        case "reply":
+            for d in node.defenses ?? [] { collectSolutionMoves(d.then, into: &map) }
+        default:
+            break
+        }
+    }
+
+    /// A variation node is a WRONG try when it branches from a KNOWN solving position and its move isn't
+    /// one the tree accepts there. Derived from the tree, so it needs no persisted flag and is correct
+    /// again the moment the puzzle reopens. A branch off a non-solving spot (an opponent reply, an
+    /// explored line) has no accepted-move entry → never marked wrong.
+    private func isWrongTry(branchFen: String, _ node: VarNode) -> Bool {
+        guard let accepted = solutionUci[VariationForest.norm(branchFen)] else { return false }
+        // Tolerate a promotion-suffix mismatch (e2e8 vs e2e8q) — prefix-match either direction.
+        return !accepted.contains { $0 == node.uci || node.uci.hasPrefix($0) || $0.hasPrefix(node.uci) }
     }
 
     /// Capture the poisoned line while it's on the board (it clears on the next repaint).
@@ -914,6 +1056,7 @@ struct StudySessionScreen: View {
 
     private func playMoveResolved(_ from: String, _ to: String, promotion: Character?) {
         guard let applied = ChessMove.apply(displayedFen, from: from, to: to, promotion: promotion) else { return }
+        expectCoachBeat = false                        // a move gets ✓+local praise / ✗+Why? — no coach beat
         let solve = displayedFen                      // the position being solved (before the move)
         // A NEW attempt supersedes the prior Retry-guard. `solveFen` pins the board on the puzzle root
         // through a late coach repaint after Retry, but it OUTRANKS the move line in `displayedFen` — so
@@ -935,33 +1078,141 @@ struct StudySessionScreen: View {
         let verdict = walker?.adjudicate(uci: uci, san: san)
         stream?.pushLocalYouMoveBeat("Played \(san)", move: san, fen: applied.fen,
                                      correct: verdict?.correct, clientId: clientId)
-        if verdict?.correct == false {                // wrong drill move → hold + Retry at once
-            solveFen = solve; lastMoveWrong = true; lastMoveUci = uci
-        }
-        Task {
-            let r = await coach?.playMove(uci, fen: solve, clientId: clientId)
-            if r?.drill == true && r?.correct == false {
-                solveFen = solve                      // remember the puzzle position for Retry
-                lastMoveWrong = true                  // keep the hold; Retry appears
-                lastMoveUci = uci                     // remember the move so "Why?" can explain it
-            } else {
-                // Correct / non-drill → the hold is dropped by onChange(board.fen) when the live board
-                // lands (no flicker). Here we only clear the drill/Retry state.
-                solveFen = nil
-                lastMoveWrong = false
-                // Solved a branch with sibling defences remaining → surface Continue; the board stays on
-                // the solution and the next branch is walked only on click (server does the backtrack).
-                continueBranchPending = (r?.awaitContinue == true)
-                // Solved the whole drill → let the MCP know, so the coach gives a grounded closing.
-                if r?.drill == true && r?.finished == true {
-                    await coach?.drillSolved(fen: board?.fen ?? solve)
-                    if hadPoisonedLine { poisonedLineNudge = true }   // this drill had a trap → offer to punish it
-                    // Base-frame drill (no rabbit-hole to pop) → offer "back to the previous concept",
-                    // which resets to the start position. In a pushed activity the depth>1 pop covers it.
-                    if (stream?.activityDepth ?? 1) == 1 { baseConceptClosed = true }
+        if walker != nil {
+            // LOCAL PUZZLE: everything here is client-side — the walker adjudicated, we play both sides,
+            // and the move silently persists via the `displayedFen` onChange (setBoardPosition + setView).
+            // NO `/move`, no LLM. The only server LLM call in puzzle mode is the on-demand "Why?".
+            if verdict?.correct == false {                    // wrong → hold + Retry + on-demand Why
+                solveFen = solve; lastMoveWrong = true; lastMoveUci = uci
+                _ = variations.add(VarNode(uci: uci, san: san, fen: applied.fen), from: solve)   // save the try
+                Task { await coach?.setView(viewSnapshot()) }   // a held wrong move doesn't move the board, so
+                                                                // sync the variation explicitly
+            } else if verdict?.correct == true {              // right → local praise + play the reply locally
+                stream?.pushLocalBeat(Praise.next(), tone: "praise")
+                if var line = localLine {
+                    let studentIdx = line.count               // index the student move lands at
+                    line.append(Ply(n: line.count, san: san, uci: uci, fen: applied.fen))
+                    heldWrong = nil
+                    if let reply = walker?.lastReply, let rfen = reply.then.fen {
+                        line.append(Ply(n: line.count, san: reply.san, uci: reply.uci, fen: rfen))
+                        // Set the line AND pin the cursor to the student's move in the SAME cycle, so the
+                        // board never flashes the reply — it holds on your move, then eases to the tip
+                        // (viewIndex → nil) so the opponent's piece SLIDES in.
+                        localLine = line
+                        pieceIdMaps = PieceTrack.idMaps(line)   // SYNC — the `.task` recompute is async and
+                                                               // wouldn't be ready in time, so the slide had
+                                                               // no stable ids and the piece jumped instead
+                        viewIndex = studentIdx
+                        stream?.pushLocalOpponentMoveBeat(reply.san, fen: rfen)   // Lucena's move (chip, no tick)
+                        DispatchQueue.main.async {
+                            withAnimation(.easeInOut(duration: 0.3)) { viewIndex = nil }
+                        }
+                    } else {
+                        localLine = line                      // line ended (a one-move win) — no reply to play
+                    }
+                    if walker?.awaitingContinue == true {     // a branch is solved, but the opponent has
+                                                              // ANOTHER defence — offer Continue (drills it)
+                        continueBranchPending = true
+                        stream?.pushLocalBeat("Good — but the opponent has another defence. Try it.", tone: "coach")
+                    } else if verdict?.finished == true {     // solved every line — a LOCAL closing beat, no LLM
+                        stream?.pushLocalBeat("Solved — nicely done.", tone: "praise")
+                        if hadPoisonedLine { poisonedLineNudge = true }
+                        if (stream?.activityDepth ?? 1) == 1 { baseConceptClosed = true }
+                    }
+                }
+            }
+        } else {
+            // FREEFORM / non-drill move → the server handles it (narration lives there).
+            Task {
+                let r = await coach?.playMove(uci, fen: solve, clientId: clientId)
+                if r?.drill == true && r?.correct == false {
+                    solveFen = solve; lastMoveWrong = true; lastMoveUci = uci
+                } else {
+                    solveFen = nil; lastMoveWrong = false
+                    continueBranchPending = (r?.awaitContinue == true)
+                    if r?.drill == true && r?.finished == true {
+                        await coach?.drillSolved(fen: board?.fen ?? solve)
+                        if hadPoisonedLine { poisonedLineNudge = true }
+                        if (stream?.activityDepth ?? 1) == 1 { baseConceptClosed = true }
+                    }
                 }
             }
         }
+    }
+
+    /// The "Continue" button in a LOCAL puzzle: the opponent had another defence. The mainline stays the
+    /// line you already solved; this opens the sibling defence as a SIDE-LINE you're now IN and solving.
+    /// The walker pops the held sibling (the deferred backtrack); we branch a variation at that point,
+    /// animate the opponent's defence in, and hand solving to `playDrillVariation`. No server, no LLM.
+    private func continueBranchLocally() {
+        guard let cont = walker?.continueBranch() else { return }
+        let branchIdx = cont.branchLen - 1                 // the shared position the sibling branches FROM
+        let line = displayLine
+        guard line.indices.contains(branchIdx) else { return }
+        let branchFen = line[branchIdx].fen
+        let sibNode = VarNode(uci: cont.defenseUci, san: cont.defenseSan, fen: cont.afterFen)
+        let attached = variations.add(sibNode, from: branchFen)   // dedup: re-enters an existing sibling
+        // Switching to a sibling at the SAME branch replaces the current side-line rather than stacking.
+        if varStack.last?.branchLineIndex == branchIdx { varStack.removeLast() }
+        varStack.append(VarSegment(branchLineIndex: branchIdx, nodes: attached.line))
+        solvingSiblingBranch = true
+        openCaret = nil; collapseTo = nil
+        varCursor = branchIdx                              // hold on the branch point, then slide it in
+        stream?.pushLocalOpponentMoveBeat(cont.defenseSan, fen: cont.afterFen)
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.3)) { varCursor = displayLine.count - 1 }
+        }
+        Task { await coach?.setView(viewSnapshot()) }
+    }
+
+    /// Extend the active side-line's tip with a node (keeping the linked-list `next` consistent). When
+    /// `advance`, snap the cursor to the new tip (an instant show — the SLIDE is driven by the caller
+    /// animating `varCursor` afterward, exactly like the mainline reply path).
+    private func appendVariationTip(_ node: VarNode, advance: Bool) {
+        guard !varStack.isEmpty else { return }
+        varStack[varStack.count - 1].nodes.last?.next = node
+        varStack[varStack.count - 1].nodes.append(node)
+        if advance { varCursor = displayLine.count - 1 }
+    }
+
+    /// A drill answer typed into a sibling side-line: adjudicate via the walker (the sole local
+    /// adjudicator), extend the side-line, and play the opponent's reply INTO the same side-line —
+    /// mirroring `playMoveResolved`'s local branch, but on `varStack` instead of `localLine`.
+    private func playDrillVariation(_ from: String, _ to: String) {
+        guard let applied = ChessMove.apply(displayedFen, from: from, to: to, promotion: nil) else { return }
+        let solve = displayedFen
+        let san = ChessMove.san(solve, from: from, to: to, promotion: nil)
+        let uci = applied.uci
+        let clientId = UUID().uuidString
+        expectCoachBeat = false
+        let verdict = walker?.adjudicate(uci: uci, san: san)
+        stream?.pushLocalYouMoveBeat("Played \(san)", move: san, fen: applied.fen,
+                                     correct: verdict?.correct, clientId: clientId)
+        if verdict?.correct == false {                     // wrong → hold + Retry + save the try under "?"
+            heldWrong = applied.fen                         // optimistic (displayedFen shows it in-side-line)
+            lastMoveWrong = true; lastMoveUci = uci
+            _ = variations.add(VarNode(uci: uci, san: san, fen: applied.fen), from: solve)   // persists as a variation
+        } else if verdict?.correct == true {               // right → praise, play the reply, keep drilling
+            heldWrong = nil
+            stream?.pushLocalBeat(Praise.next(), tone: "praise")
+            appendVariationTip(VarNode(uci: uci, san: san, fen: applied.fen), advance: true)   // your move (instant)
+            if let reply = walker?.lastReply, let rfen = reply.then.fen {
+                appendVariationTip(VarNode(uci: reply.uci, san: reply.san, fen: rfen), advance: false)
+                stream?.pushLocalOpponentMoveBeat(reply.san, fen: rfen)   // Lucena's move (chip, no tick)
+                DispatchQueue.main.async {                 // hold on your move, then SLIDE the reply in
+                    withAnimation(.easeInOut(duration: 0.3)) { varCursor = displayLine.count - 1 }
+                }
+            }
+            if walker?.awaitingContinue == true {          // yet another defence at this point — offer Continue
+                continueBranchPending = true
+                stream?.pushLocalBeat("Good — but the opponent has another defence. Try it.", tone: "coach")
+            } else if verdict?.finished == true {          // every line solved — closing beat, leave the side-line up
+                solvingSiblingBranch = false
+                stream?.pushLocalBeat("Solved — nicely done.", tone: "praise")
+                if (stream?.activityDepth ?? 1) == 1 { baseConceptClosed = true }
+            }
+        }
+        Task { await coach?.setView(viewSnapshot()) }
     }
 
     /// The action buttons live in the CHAT (not on the board): Retry (red — the only red button) and
@@ -1044,6 +1295,7 @@ struct StudySessionScreen: View {
     private func sendPrompt(_ text: String) {
         guard let session, let coach, !coachSending else { return }
         withAnimation(.easeInOut(duration: 0.25)) { conversationStarted = true }   // dismiss the tips
+        expectCoachBeat = true                          // a text turn DOES expect a coach beat
         coachSending = true
         Task {
             _ = await coach.sendTurn(text: text, sessionId: session)
@@ -1089,10 +1341,11 @@ struct StudySessionScreen: View {
         if lastMoveWrong || poisonedLineNudge || showBack || continueBranchPending {
             HStack(spacing: Theme.Spacing.md) {
                 if continueBranchPending {
-                    // Solved this branch — walk the opponent's next defence on click (server backtracks).
+                    // Solved this branch — walk the opponent's next defence on click. Local walk does the
+                    // backtrack itself (no server); a legacy server drill (no walker) still asks the server.
                     chatButton("Continue", icon: Theme.Symbol.chevronRight, background: Theme.Palette.coachBlue) {
                         continueBranchPending = false
-                        coach?.continueBranch()
+                        if walker != nil { continueBranchLocally() } else { coach?.continueBranch() }
                     }
                 }
                 if Self.showBackToPreviousConcept {
@@ -1102,7 +1355,7 @@ struct StudySessionScreen: View {
                         // in the rabbit-hole (you can bail anytime, not only after the drill closes).
                         chatButton("Back to the previous concept", icon: "arrow.uturn.backward",
                                    background: Theme.Palette.ink) {
-                            Task { await coach?.popActivity() }
+                            Task { await coach?.openActivity(0) }
                         }
                     } else if baseConceptClosed {
                         // No rabbit-hole to pop (base frame), but a concept just closed — going back means the
@@ -1117,14 +1370,14 @@ struct StudySessionScreen: View {
                 if lastMoveWrong {
                     chatButton(Strings.StudySession.retry, icon: Theme.Symbol.retry,
                                background: Theme.Palette.mistakeRed) {   // red — the one exception
-                        heldWrong = nil; lastMoveWrong = false
+                        heldWrong = nil; lastMoveWrong = false           // the wrong try persists under "?"
                     }
-                    // On-demand explanation — the lightweight /explain path (grounds the move's
-                    // refutation, one small generation). Fires only when the player asks.
+                    // v1: the wrong-move "why" is ON DEMAND now (not auto). Why? → `explain` regenerates
+                    // today's refutation-line explanation for the held move.
                     chatButton("Why?", icon: "questionmark.circle", background: Theme.Palette.ink) {
-                        guard let session else { return }
+                        guard let session, let move = lastMoveUci else { return }
                         let fen = solveFen ?? displayedFen
-                        let move = lastMoveUci
+                        expectCoachBeat = true          // Why? DOES expect a coach beat (the explanation)
                         coachSending = true
                         Task {
                             _ = await coach?.explain(fen: fen, move: move, correct: false, sessionId: session)
@@ -1199,12 +1452,57 @@ struct StudySessionScreen: View {
     /// content — up to half the column (`columnHeight * 0.5`).
     private func beatsColumn(columnHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            tabBar
+            // The coach CONVERSATION is the only thing that changes between the session and a puzzle. On a
+            // switch it SLIDES IN as one block — entering a puzzle from the right, going back from the
+            // left. It's a SINGLE pane driven by an offset (not two transitioning copies): a keyed
+            // transition would briefly render the old and new pane at once, and both read the same live
+            // `beats`, so every message showed twice mid-slide. One pane → one copy → nothing doubles.
+            // The board, eval bar, rail and input never move.
+            tabBar                               // Coach | Analysis — PINNED at the top, never moves or slides
+            // The ONE animation on an activity switch: the coach conversation slides in RIGHT-TO-LEFT.
+            // Keyed on the in-view activity — the new pane's insertion transition starts it off-screen to
+            // the right and eases it home (so it never flashes at home first); the old pane is removed
+            // instantly (`.identity`) so nothing slides beside it. Driven by StateStream's own animation
+            // (it applies the `activity` event inside withAnimation), so there's no second animator here.
+            // The ZStack is the stable, CLIPPED slot; board + rail + tabs + input never move.
+            ZStack(alignment: .topLeading) {         // TOP-align: a long reopened pane must not be centered
+                conversationPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .id(stream?.activeIdx ?? 0)
+                    // The PUZZLE pane (idx > 0) sits ON TOP and always slides horizontally — in from the
+                    // right to COVER the session (enter/reopen), out to the right to UNCOVER it (back). The
+                    // SESSION pane (idx 0) sits beneath and never moves: on back it's simply revealed. Both
+                    // are keyed to the pane's OWN index, so the outgoing puzzle keeps its slide + top z-order.
+                    .zIndex(Double(stream?.activeIdx ?? 0))
+                    .transition((stream?.activeIdx ?? 0) > 0 ? .move(edge: .trailing) : .identity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            // No "ask coach" inside a puzzle — the puzzle surface is fully local (moves + Retry/Why only),
+            // there's no free-text coaching to type. The input is the session's, not the puzzle's.
+            if !inActivity {
+                ChatInputPaneView(maxHeight: columnHeight * 0.5, session: session, coach: coach,
+                                  loading: isWarmingUp || session == nil, sending: $coachSending,
+                                  onEngage: { withAnimation(.easeInOut(duration: 0.25)) { conversationStarted = true } })
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// One coach conversation — the session's or a puzzle's. This whole block is what slides when the
+    /// in-view activity changes (see `beatsColumn`); a faint wash + the drill header mark a puzzle.
+    private var conversationPane: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            if inActivity || drillGoverns { drillHeader }   // back + title; rides along with the slide
             Group {
                 switch rightTab {
                 case .coach:
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         moveHead
+                            // The caption line appears/disappears when the board changes (e.g. a reopen
+                            // swaps to the puzzle's board). Make that change INSTANT so it can't drift the
+                            // conversation up-by-a-line WHILE the pane is sliding in.
+                            .animation(nil, value: stream?.board?.caption)
                         if isWarmingUp {
                             coachLoading            // server + Maia still coming up → chat skeleton
                                 .transition(.opacity)
@@ -1216,8 +1514,12 @@ struct StudySessionScreen: View {
                             // just below it. Buttons rendered INSIDE the ScrollView's content don't
                             // reliably receive clicks on macOS (Retry / "show me the trap" fired their
                             // labels but never their actions), so they live outside the scroll now.
-                            BeatsColumnView(beats: beats, history: history, onMoveTap: snapToMove)
-                                .transition(.opacity)
+                            BeatsColumnView(beats: beats, history: history, onMoveTap: snapToMove,
+                                            onCardTap: { idx in Task { await coach?.openActivity(idx) } },
+                                            // A REOPENED puzzle (in an activity, no longer live-drilling) opens
+                                            // at the TOP — its own start — so a long saved conversation doesn't
+                                            // scroll down on appear (the "goes up"). Live/base follows the bottom.
+                                            scrollAnchor: (inActivity && stream?.mode != "coach") ? .top : .bottom)
                             chatFooter   // status + Retry / Why / show-me-the-trap — outside the scroll
                         }
                     }
@@ -1230,10 +1532,53 @@ struct StudySessionScreen: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            ChatInputPaneView(maxHeight: columnHeight * 0.5, session: session, coach: coach,
-                              loading: isWarmingUp || session == nil, sending: $coachSending,
-                              onEngage: { withAnimation(.easeInOut(duration: 0.25)) { conversationStarted = true } })
-                .frame(maxWidth: .infinity)
+        }
+        .padding(inActivity ? Theme.Spacing.md : 0)
+        .background(RoundedRectangle(cornerRadius: 12)
+            .fill(inActivity ? Theme.Palette.ink.opacity(0.04) : Color.clear))
+    }
+
+    /// A drill governs the chat: coach mode is live, or a what-if excursion has it parked
+    /// (`suspended`) — the header stays up so the drill remains visible (and leavable) either way.
+    private var drillGoverns: Bool {
+        stream?.mode == "coach" || (stream?.modeSuspended ?? false)
+    }
+
+    private var drillTitle: LocalizedStringKey {
+        // Prefer the live lesson type; fall back to the in-view activity's kind so a REOPENED (solved,
+        // freeform) puzzle still titles correctly — its mode is no longer "coach".
+        switch stream?.modeLessonType ?? (inActivity ? stream?.activityKind : nil) {
+        case "puzzle":  return Strings.StudySession.drillPuzzle
+        case "endgame": return Strings.StudySession.drillEndgame
+        case "midgame": return Strings.StudySession.drillMidgame
+        case "opening": return Strings.StudySession.drillOpening
+        default:        return Strings.StudySession.drillGeneric
+        }
+    }
+
+    /// The drill header — the mode made explicit: a back button (leave the drill → freeform; the
+    /// lesson goes `open`, resumable later) and the lesson's title. Purely additive; the conversation
+    /// below behaves exactly as before.
+    private var drillHeader: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Button {
+                Task { await coach?.leaveLesson() }
+            } label: {
+                HStack(spacing: Theme.Spacing.xxs) {
+                    Image(systemName: Theme.Symbol.back)
+                        .font(Theme.Typography.labelSmall)
+                    Text(Strings.StudySession.back)
+                        .font(Theme.Typography.label)
+                        .tracking(Theme.Tracking.label)
+                        .textCase(.uppercase)
+                }
+                .foregroundStyle(Theme.Palette.ink70)
+            }
+            .buttonStyle(.plain)
+            Text(drillTitle)
+                .font(Theme.Typography.serif(16, .semibold))
+                .foregroundStyle(Theme.Palette.ink)
+            Spacer()
         }
     }
 
