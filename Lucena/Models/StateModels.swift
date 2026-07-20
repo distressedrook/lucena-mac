@@ -68,6 +68,12 @@ struct Ply: Decodable, Identifiable, Equatable {
         fen = try c.decodeIfPresent(String.self, forKey: .fen) ?? BoardState.startFEN
     }
     enum CodingKeys: String, CodingKey { case n, san, uci, fen }
+
+    /// Build a ply locally — for the client-driven drill line (playing the opponent's reply without a
+    /// server round-trip). The custom decoder above suppresses the memberwise init, so declare it.
+    init(n: Int, san: String?, uci: String?, fen: String) {
+        self.n = n; self.san = san; self.uci = uci; self.fen = fen
+    }
 }
 
 struct MoveHistory: Decodable {
@@ -193,6 +199,13 @@ struct Beat: Codable, Equatable, Identifiable {
     var notation: String?
     var boardSeq: Int?
     var ts: Double?
+    // On a kind:"card" beat — a saved ACTIVITY (a puzzle) the player attempted. The card sits in the
+    // base conversation; tapping it reopens that activity (its own board/beats/variations). `activityIdx`
+    // is which activity to reopen, `title` labels it, `status` is "attempted" | "solved".
+    var activityIdx: Int?
+    var title: String?
+    var status: String?
+    var activityKind: String?     // the reopened activity's kind ("puzzle", …)
     // The nonce the client stamped on a typed turn. A "you" beat is rendered LOCALLY the instant the
     // player sends (optimistic), then the server persists+echoes the same beat carrying this id back;
     // the client matches on it to reconcile the two into one (see StateStream.applyBeats) instead of
@@ -216,17 +229,23 @@ struct Beat: Codable, Equatable, Identifiable {
         boardSeq = try c.decodeIfPresent(Int.self, forKey: .boardSeq)
         ts = try c.decodeIfPresent(Double.self, forKey: .ts)
         clientId = try c.decodeIfPresent(String.self, forKey: .clientId)
+        activityIdx = try c.decodeIfPresent(Int.self, forKey: .activityIdx)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        activityKind = try c.decodeIfPresent(String.self, forKey: .activityKind)
     }
     enum CodingKeys: String, CodingKey {
         // The stream decoder uses .convertFromSnakeCase, so incoming `client_id` arrives as `clientId`
         // (like `board_seq` → `boardSeq`) — the case must use the DEFAULT raw value, not "client_id",
         // or it never matches and reconciliation silently fails (the message doubles).
         case i, kind, tone, stops, segments, hints, you, correct, move, fen, notation, boardSeq, ts
-        case clientId
+        case clientId, activityIdx, title, status, activityKind
     }
 
     var isAsk: Bool { kind == "ask" }
     var isYou: Bool { kind == "you" }   // a player-turn beat — rendered as a right-aligned bubble
+    var isOpp: Bool { kind == "opp" }   // Lucena playing the opponent's reply — a move chip, no tick
+    var isCard: Bool { kind == "card" }  // a saved-activity card — tap to reopen the puzzle
     /// A move played on the shared analysis board: neither the coach's voice nor the player's, so it
     /// gets its own neutral lane. Needs `fen` too — the lane is a navigable chip, and without a
     /// position to snap to there is nothing to render.

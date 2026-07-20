@@ -63,6 +63,11 @@ enum Strings {
         static var checkmate: LocalizedStringKey { "Checkmate" }
         static var stalemate: LocalizedStringKey { "Stalemate" }
         static var noSessions: LocalizedStringKey { "No sessions yet" }
+        static var drillPuzzle: LocalizedStringKey { "Puzzle" }
+        static var drillEndgame: LocalizedStringKey { "Endgame" }
+        static var drillMidgame: LocalizedStringKey { "Middlegame" }
+        static var drillOpening: LocalizedStringKey { "Opening" }
+        static var drillGeneric: LocalizedStringKey { "Drill" }
         static var untitledSession: LocalizedStringKey { "Untitled session" }
 
         enum Menu {

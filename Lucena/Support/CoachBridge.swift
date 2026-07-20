@@ -42,7 +42,7 @@ final class CoachBridge: Sendable {
     @discardableResult
     func explain(fen: String, move: String?, correct: Bool?, sessionId: String) async -> Bool {
         var m: [String: Any] = ["type": "explain", "fen": fen]
-        if let move { m["move"] = move }
+        if let move { m["uci"] = move }          // the held wrong move's uci; backend reads msg["uci"]
         if let correct { m["correct"] = correct }
         sendUp(m)
         return true
@@ -201,8 +201,13 @@ final class CoachBridge: Sendable {
         return (try? decoder.decode(MoveResult.self, from: data)) ?? MoveResult()
     }
 
-    /// Pop the current rabbit-hole activity. (Backend `/activity` follow-up.)
-    func popActivity() async { await post("activity", ["op": "pop"]) }
+    /// Switch the in-view activity: reopen a saved activity by index (a card click), or `idx: 0` to
+    /// return to the base conversation. The server replays that activity's board/beats/variations.
+    func openActivity(_ idx: Int) async { await post("activity", ["op": "open", "idx": idx]) }
+
+    /// Leave the current drill (the header's back button): the lesson goes `open` (resumable) and
+    /// the chat drops back to freeform — the server confirms over the WS `mode` event.
+    func leaveLesson() async { await post("lesson", ["op": "leave"]) }
 
     /// Reset the board to the starting position. (Backend `/reset` follow-up.)
     func resetToStart() async { await post("reset", [:]) }

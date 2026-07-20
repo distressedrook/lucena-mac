@@ -8,13 +8,18 @@ struct BeatsColumnView<Footer: View>: View {
     let beats: [Beat]
     let history: [Ply]                  // to link a move NAMED in prose to the position it produced
     let onMoveTap: (String) -> Void     // tap a move chip → snap the board to that position (by fen)
+    let onCardTap: (Int) -> Void        // tap an activity card → reopen that saved activity (by idx)
+    let scrollAnchor: UnitPoint         // .bottom follows the newest beat (live); .top opens at the start (review)
     let footer: () -> Footer            // action buttons that flow at the END of the conversation
 
     init(beats: [Beat], history: [Ply] = [], onMoveTap: @escaping (String) -> Void = { _ in },
+         onCardTap: @escaping (Int) -> Void = { _ in }, scrollAnchor: UnitPoint = .bottom,
          @ViewBuilder footer: @escaping () -> Footer = { EmptyView() }) {
         self.beats = beats
         self.history = history
         self.onMoveTap = onMoveTap
+        self.onCardTap = onCardTap
+        self.scrollAnchor = scrollAnchor
         self.footer = footer
     }
 
@@ -31,18 +36,20 @@ struct BeatsColumnView<Footer: View>: View {
                 // repeated it a beat later.
                 ForEach(beats.filter { !$0.isNeutralMove }) { beat in
                     BeatRow(beat: beat, active: beat.id == beats.last?.id, moveLookup: moveLookup,
-                            onMoveTap: onMoveTap)
+                            onMoveTap: onMoveTap, onCardTap: onCardTap)
                         .id(beat.id)
-                        // Each beat animates IN, and the DIRECTION is attribution: the player's own
-                        // turns slide from the right (like a sent message), the coach's from the left.
-                        .transition(.opacity.combined(with: .move(edge: beat.isYou ? .trailing : .leading)))
+                        // Beats fade in, calmly. (An earlier version slid player beats from the right and
+                        // coach beats from the left; combined with a whole-conversation reload on an
+                        // activity switch that read as "things flying in from everywhere". One direction —
+                        // none — is quieter, and the pane itself does the left↔right slide on a switch.)
+                        .transition(.opacity)
                 }
                 footer()                                        // Retry / show-me-the-trap, in-flow
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.trailing, Theme.Spacing.xs)
         }
-        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(scrollAnchor)
     }
 
     /// Every ACTUAL move in the game, keyed by how the coach numbers it in prose ("12. Nf3",
@@ -66,10 +73,35 @@ private struct BeatRow: View {
     let active: Bool
     var moveLookup: [String: String] = [:]
     var onMoveTap: (String) -> Void = { _ in }
+    var onCardTap: (Int) -> Void = { _ in }
 
     var body: some View {
-        if beat.isYou {
+        if beat.isCard {
+            ActivityCardView(title: beat.title ?? "Puzzle", status: beat.status,
+                             kind: beat.activityKind ?? "puzzle") {
+                if let idx = beat.activityIdx { onCardTap(idx) }
+            }
+        } else if beat.isYou {
             youBubble(beat.text, correct: beat.correct, move: beat.move, fen: beat.fen)
+        } else if beat.isOpp {
+            // Lucena playing the opponent's reply — the coach's LEFT-rule + label (like any coach beat),
+            // with the SAME "Played [chip]" as the player's move, but no verdict tick (it isn't judged).
+            HStack(alignment: .top, spacing: 0) {
+                Rectangle()
+                    .fill(active ? Theme.Palette.coachBlue : Theme.Palette.ink18)
+                    .frame(width: 2.5)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    label
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Text(Strings.StudySession.played)
+                            .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
+                        if let move = beat.move, let fen = beat.fen {
+                            moveChip(move) { onMoveTap(fen) }        // clickable, no tick
+                        }
+                    }
+                }
+                .padding(.leading, Theme.Spacing.lg)
+            }
         } else {
             HStack(alignment: .top, spacing: 0) {
                 Rectangle()
@@ -160,6 +192,65 @@ private struct BeatRow: View {
             .foregroundStyle(Theme.Palette.paper)
             .frame(width: Self.badgeSide, height: Self.badgeSide)
             .background(correct ? Theme.Palette.correctGreen : Theme.Palette.mistakeRed)
+    }
+}
+
+// MARK: - activity card
+
+/// A saved activity (a puzzle the player attempted) as a clickable card in the base conversation.
+/// Tapping it reopens that activity — its own board, beats and variations. The "Annotated Board"
+/// look: paper + ink, no gradients; the status reads "attempted" or "solved".
+private struct ActivityCardView: View {
+    let title: String
+    let status: String?
+    let kind: String
+    let onTap: () -> Void
+
+    private var solved: Bool { status == "solved" }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                statusBadge                       // SQUARE, per design (matches the verdict tick)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(title)
+                        .font(Theme.Typography.serif(16, .semibold))
+                        .foregroundStyle(Theme.Palette.ink)
+                    Text(solved ? "Solved · tap to review" : "Attempted · tap to review")
+                        .font(Theme.Typography.labelSmall)
+                        .tracking(Theme.Tracking.labelWide)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.Palette.ink45)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.Palette.ink45)
+            }
+            .padding(Theme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Palette.paper)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.Palette.ink18, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+    }
+
+    /// The status indicator — a SQUARE (the design's verdict-badge shape, never a rounded seal): a
+    /// green square with a paper checkmark when solved, an ink-outlined empty square when only attempted.
+    private var statusBadge: some View {
+        ZStack {
+            if solved {
+                Rectangle().fill(Theme.Palette.correctGreen)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.Palette.paper)
+            } else {
+                Rectangle().stroke(Theme.Palette.ink45, lineWidth: 1.5)
+            }
+        }
+        .frame(width: 24, height: 24)
     }
 }
 

@@ -24,7 +24,11 @@ final class StateStream {
     private(set) var viewEpoch = 0                  // bumps on each `view` event → drives re-hydration
     private(set) var version = 0                    // P4b: the server's monotonic document version we're at
     private(set) var activityDepth = 1             // P5: activity-stack depth (1 = base, no breadcrumb)
-    private(set) var activityKind = "conversation" // P5: the live (top) activity's kind
+    private(set) var activityKind = "conversation" // the in-view activity's kind ("puzzle" → puzzle screen)
+    private(set) var activeIdx = 0                 // which activity is in view (0 = base conversation)
+    private(set) var mode = "freeform"             // conversation mode: "coach" while a drill is live
+    private(set) var modeSuspended = false         // a what-if parked the drill (freeform, but it still governs)
+    private(set) var modeLessonType: String?       // the governing lesson's type ("puzzle", …) → header title
     private(set) var connected = false
     private(set) var ready = false        // the full initial snapshot has arrived → safe to reveal the UI
 
@@ -101,6 +105,8 @@ final class StateStream {
         currentSession = nil
         view = nil
         version = 0
+        mode = "freeform"; modeSuspended = false; modeLessonType = nil
+        activityDepth = 1; activityKind = "conversation"; activeIdx = 0
     }
 
     private func runLoop(_ gen: Int) async {
@@ -227,9 +233,16 @@ final class StateStream {
             case "ready":    ready = true
             case "reset":    board = nil; beats = []; analysis = nil; drill = nil; turn = nil
                              history = []; engineLines = nil; coachStatus = nil; view = nil
-                             version = 0; activityDepth = 1; activityKind = "conversation"
+                             version = 0; activityDepth = 1; activityKind = "conversation"; activeIdx = 0
+                             mode = "freeform"; modeSuspended = false; modeLessonType = nil
             case "activity": if let a = try? decoder.decode(ActivityEvent.self, from: data) {
                                  activityDepth = a.depth ?? 1; activityKind = a.kind ?? "conversation"
+                                 activeIdx = a.idx ?? 0
+                             }
+            case "mode":     if let m = try? decoder.decode(ModeEvent.self, from: data) {
+                                 mode = m.mode ?? "freeform"
+                                 modeSuspended = m.suspended ?? false
+                                 modeLessonType = m.lessonType
                              }
             case "status":   coachStatus = (try? decoder.decode(StatusEvent.self, from: data))?.text
             case "board":    if let v = try? decoder.decode(BoardState.self, from: data) { board = v }
@@ -253,7 +266,7 @@ final class StateStream {
     /// out-of-band `i` so it never collides with the server's sequential beat ids.
     func pushLocalBeat(_ text: String, tone: String = "correct") {
         let i = (beats.map(\.i).max() ?? 0) + 1_000_000
-        beats.append(Beat(i: i, kind: "say", tone: tone, text: text))
+        withAnimation(.easeInOut(duration: 0.22)) { beats.append(Beat(i: i, kind: "say", tone: tone, text: text)) }
     }
 
     /// Render the player's just-typed message IMMEDIATELY as a right-aligned "you" beat, before the
@@ -280,12 +293,28 @@ final class StateStream {
         b.fen = fen
         b.correct = correct     // the drill verdict, adjudicated locally (nil = freeform, no badge)
         b.clientId = clientId
-        beats.append(b)
+        withAnimation(.easeInOut(duration: 0.22)) { beats.append(b) }
+    }
+
+    /// Lucena playing the opponent's reply — a local beat in the SAME move-chip format as "you played",
+    /// but attributed to the coach and with NO verdict tick (it isn't adjudicated, it's the fixed line).
+    func pushLocalOpponentMoveBeat(_ san: String, fen: String) {
+        let i = (beats.map(\.i).max() ?? 0) + 1_000_000
+        var b = Beat(i: i, kind: "opp", text: "Played \(san)")
+        b.move = san
+        b.fen = fen
+        withAnimation(.easeInOut(duration: 0.22)) { beats.append(b) }
     }
 
     private func applyBeats(_ data: Data) {
         guard let ev = try? decoder.decode(BeatsEvent.self, from: data) else { return }
-        if let snapshot = ev.beats { beats = snapshot }            // snapshot-on-connect (server wins)
+        if let snapshot = ev.beats {
+            // A full-list REPLACE (connect / frame swap) — apply it INSTANTLY, never animated: animating
+            // the list emptying-then-refilling is the vertical "reflow" jagger on an activity switch. Only
+            // DELTAS (new messages, below) get the gentle fade.
+            var instant = Transaction(); instant.disablesAnimations = true
+            withTransaction(instant) { beats = snapshot }
+        }
         else if let appended = ev.appended {                       // delta
             for beat in appended {
                 // Reconcile an optimistic "you" beat with the server's echo of it (same clientId):
@@ -306,7 +335,8 @@ final class StateStream {
 
     private struct StatusEvent: Decodable { var text: String? }
     private struct VersionedEvent: Decodable { var version: Int? }
-    private struct ActivityEvent: Decodable { var depth: Int?; var kind: String? }
+    private struct ActivityEvent: Decodable { var depth: Int?; var kind: String?; var idx: Int? }
+    private struct ModeEvent: Decodable { var mode: String?; var suspended: Bool?; var lessonType: String? }
 
     /// A disconnected stream preloaded with fixed state — for SwiftUI previews and the fidelity pass.
     static func stub(board: BoardState? = nil, beats: [Beat] = [],
