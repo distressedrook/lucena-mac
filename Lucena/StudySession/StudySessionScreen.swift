@@ -1494,7 +1494,7 @@ struct StudySessionScreen: View {
                     if !(inActivity || drillGoverns) {
                         // v1: the margin IS the coach surface (owner wiring
                         // step a: the conversation view goes away).
-                        MarginLiveView(fen: displayedFen, sessionId: session, coach: coach)
+                        MarginLiveView(fen: displayedFen, sessionId: session, coach: coach, live: viewIndex == nil)
                     } else {
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         moveHead
@@ -1640,7 +1640,7 @@ private enum RightTab: CaseIterable {
     case coach, analysis
     var title: LocalizedStringKey {
         switch self {
-        case .coach: return "Margin"
+        case .coach: return "Position"
         case .analysis: return Strings.StudySession.tabAnalysis
         }
     }

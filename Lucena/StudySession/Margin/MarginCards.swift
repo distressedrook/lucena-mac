@@ -10,18 +10,18 @@ struct EpigraphView: View {
     let epigraph: Epigraph
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        VStack(spacing: Theme.Spacing.sm) {         // centered (owner note)
             Text("\u{201C}\(epigraph.quote)\u{201D}")
                 .font(Theme.Typography.epigraph)
                 .foregroundStyle(Theme.Palette.ink82)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             Text("— \(epigraph.author)")
                 .font(Theme.Typography.epigraphCredit)
                 .foregroundStyle(Theme.Palette.ink55)
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.top, Theme.Spacing.xl)
-        .padding(.horizontal, Theme.Spacing.sm)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, Theme.Spacing.lg)
     }
 }
 

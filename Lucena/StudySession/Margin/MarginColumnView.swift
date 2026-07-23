@@ -32,12 +32,16 @@ struct MarginColumnView: View {
                 UrgentCardView(card: urgent, action: onDrill)
                     .frame(maxWidth: .infinity)
                 Spacer(minLength: Theme.Spacing.lg)
+            } else if let epigraph = content.epigraph {
+                // The quote centers in the box like the study caption does —
+                // structurally, with equal spacers (owner: not top-aligned).
+                Spacer(minLength: Theme.Spacing.lg)
+                EpigraphView(epigraph: epigraph)
+                Spacer(minLength: Theme.Spacing.lg)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        if let epigraph = content.epigraph {
-                            EpigraphView(epigraph: epigraph)
-                        } else if let theory = content.theory {
+                        if let theory = content.theory {
                             TheoryCardView(card: theory, onDoorTap: onDoorTap)
                         } else {
                             if let rook = content.rookLine {
@@ -78,30 +82,34 @@ struct MarginColumnView: View {
     // MARK: masthead — the opening names itself; status chrome; a hairline.
 
     @ViewBuilder private var masthead: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text((content.masthead ?? "Lucena").uppercased())
-                .font(Theme.Typography.masthead)
-                .tracking(Theme.Tracking.labelWide)
-                .foregroundStyle(Theme.Palette.ink82)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let status = content.statusLine {
-                Text(status)
-                    .font(Theme.Typography.labelSmall)
-                    .tracking(Theme.Tracking.label)
-                    .foregroundStyle(Theme.Palette.ink45)
+        // No fallback title (owner: no LUCENA header) — the masthead exists
+        // only when the position has a name or a status to state.
+        if content.masthead != nil || content.statusLine != nil {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                if let name = content.masthead {
+                    Text(name.uppercased())
+                        .font(Theme.Typography.masthead)
+                        .tracking(Theme.Tracking.labelWide)
+                        .foregroundStyle(Theme.Palette.ink82)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let status = content.statusLine {
+                    Text(status)
+                        .font(Theme.Typography.labelSmall)
+                        .tracking(Theme.Tracking.label)
+                        .foregroundStyle(Theme.Palette.ink45)
+                }
+                Rectangle().fill(Theme.Palette.ink22).frame(height: 1)
             }
-            Rectangle().fill(Theme.Palette.ink22).frame(height: 1)
         }
     }
 
     // MARK: footer — the command field alone (no logos in the margin).
 
     @ViewBuilder private var footer: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Rectangle().fill(Theme.Palette.ink22).frame(height: 1)
-            MarginCommandField(hints: content.commandHints, onSubmit: onCommand)
-        }
+        // The boxed command field stands alone (navigator's twin) — no rule.
+        MarginCommandField(hints: content.commandHints, onSubmit: onCommand)
     }
 }
 

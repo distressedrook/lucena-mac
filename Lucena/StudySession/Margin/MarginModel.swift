@@ -20,6 +20,7 @@ struct MarginContent {
     var cards: [MarginCard]             // the card stack; the view expands at most one
     var urgent: UrgentCard?             // compact red notice above the cards
     var commandHints: [String]          // rotating placeholder for the command field
+    var plansPending: Bool = false      // the deep layer is computing — poll
 }
 
 /// The move-1 epigraph — a fact-checked quote (lucena_core.content.epigraph,
@@ -182,7 +183,8 @@ extension MarginContent {
 
 extension MarginContent: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case masthead, statusLine, epigraph, theory, rookLine, cards, urgent, commandHints
+        case masthead, statusLine, epigraph, theory, rookLine, cards, urgent,
+             commandHints, plansPending
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -194,6 +196,7 @@ extension MarginContent: Decodable {
         cards = try c.decodeIfPresent([MarginCard].self, forKey: .cards) ?? []
         urgent = try c.decodeIfPresent(UrgentCard.self, forKey: .urgent)
         commandHints = try c.decodeIfPresent([String].self, forKey: .commandHints) ?? []
+        plansPending = try c.decodeIfPresent(Bool.self, forKey: .plansPending) ?? false
     }
 }
 

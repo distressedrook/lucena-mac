@@ -91,10 +91,10 @@ final class CoachBridge: Sendable {
     /// Submit an arbitrary structured input dict verbatim (stored for the orchestrator's read_input).
     /// The margin's content for one position (deterministic, engine-free
     /// server-side) — nil on any failure; the margin keeps its last content.
-    func margin(fen: String, sessionId: String?) async -> Data? {
+    func margin(fen: String, sessionId: String?, live: Bool = false) async -> Data? {
         var req = request("margin", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: Any] = ["fen": fen]
+        var body: [String: Any] = ["fen": fen, "live": live]
         if let sessionId { body["session_id"] = sessionId }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         if case .ok(let data) = await perform(req) { return data }
