@@ -76,16 +76,13 @@ struct CardRow: Identifiable {
     var squares: [String] = []          // square tags — the future arrow taps
 }
 
-/// The urgent moment, set the way chess print has always set it: a STUDY
-/// CAPTION. The Informant mark ("+−" = White is winning, "−+" = Black) in
-/// red ink over the canonical caption ("White to play and win."), no box,
-/// no wash — the composition and the whitespace do the work. When a forced
-/// win exists nothing else matters (owner ruling): this replaces the margin
-/// body. Never a modal, never covers the board.
+/// The urgent moment (owner ruling, final form): the canonical study caption
+/// alone — "WHITE TO PLAY AND WIN." — and the black button. Nothing else.
+/// Centered in the margin's whitespace; replaces the whole body (a forced
+/// win IS the position). Never a modal, never covers the board.
 struct UrgentCard {
-    var mark: String = "+\u{2212}"      // Informant evaluation symbol
     let text: String                    // the caption — "White to play and win."
-    let buttonTitle: String             // "Drill it"
+    let buttonTitle: String             // "Drill it" (rendered with a trailing →)
 }
 
 // MARK: - Fixtures (previews / unwired build; APIs land later)
@@ -143,7 +140,7 @@ extension MarginContent {
         masthead: "Scandinavian Defense",
         statusLine: "MIDDLEGAME · MOVE 12",
         epigraph: nil, theory: nil,
-        rookLine: RookLine(text: "Book ends here. This is the real game now.", tone: .teach),
+        rookLine: nil,                   // owner: no 'book ends here' line
         cards: [
             MarginCard(id: "plan-white", title: "Plan for White", sections: [
                 CardSection(heading: "Minority attack", rows: [

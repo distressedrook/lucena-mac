@@ -17,17 +17,21 @@ struct MarginColumnView: View {
     var onSquareTap: (String) -> Void = { _ in }      // future: arrows on the board
     var onDoorTap: (TheoryDoor) -> Void = { _ in }    // future: play the book move
 
-    /// At most ONE card open (the ruling); salience upstream orders `cards`,
-    /// so the first card starts expanded.
-    @State private var expandedCard: String?
+    /// Cards open independently (owner: opening one must not close another);
+    /// salience upstream orders `cards`, and the first starts expanded.
+    @State private var expandedCards: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.none) {
             masthead
             if let urgent = content.urgent {
-                // A forced win IS the position — the notice alone, centered.
+                // A forced win IS the position — the notice alone, DEAD CENTER
+                // of the space between masthead and command field (equal
+                // spacers: centering is structural, not an alignment default).
+                Spacer(minLength: Theme.Spacing.lg)
                 UrgentCardView(card: urgent, action: onDrill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: Theme.Spacing.lg)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -42,10 +46,12 @@ struct MarginColumnView: View {
                             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                                 ForEach(content.cards) { card in
                                     MarginCardView(card: card,
-                                                   expanded: expandedCard == card.id,
+                                                   expanded: expandedCards.contains(card.id),
                                                    onToggle: {
                                                        withAnimation(.easeInOut(duration: 0.18)) {
-                                                           expandedCard = expandedCard == card.id ? nil : card.id
+                                                           if !expandedCards.insert(card.id).inserted {
+                                                               expandedCards.remove(card.id)
+                                                           }
                                                        }
                                                    },
                                                    onSquareTap: onSquareTap)
@@ -61,9 +67,12 @@ struct MarginColumnView: View {
             }
             footer
         }
-        .frame(width: Theme.Size.marginWidth, alignment: .leading)
-        .onAppear { expandedCard = content.cards.first?.id }
-        .onChange(of: content.cards.first?.id) { _, first in expandedCard = first }
+        .frame(maxWidth: .infinity, alignment: .leading)   // fill the pane we're given
+                                                           // (marginWidth is the preview's, not a clamp)
+        .onAppear { expandedCards = Set(content.cards.first.map { [$0.id] } ?? []) }
+        .onChange(of: content.cards.first?.id) { _, first in
+            expandedCards = Set(first.map { [$0] } ?? [])
+        }
     }
 
     // MARK: masthead — the opening names itself; status chrome; a hairline.
@@ -100,25 +109,25 @@ struct MarginColumnView: View {
 
 #Preview("quiet — position card") {
     MarginColumnView(content: .sampleQuiet)
-        .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
+        .padding(Theme.Spacing.lg).frame(width: Theme.Size.marginWidth + 40, height: 720).background(Theme.windowBackground)
 }
 
 #Preview("move 1 — epigraph") {
     MarginColumnView(content: .sampleMove1)
-        .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
+        .padding(Theme.Spacing.lg).frame(width: Theme.Size.marginWidth + 40, height: 720).background(Theme.windowBackground)
 }
 
 #Preview("in book — theory") {
     MarginColumnView(content: .sampleTheory)
-        .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
+        .padding(Theme.Spacing.lg).frame(width: Theme.Size.marginWidth + 40, height: 720).background(Theme.windowBackground)
 }
 
 #Preview("noted — plan open") {
     MarginColumnView(content: .sampleNoted)
-        .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
+        .padding(Theme.Spacing.lg).frame(width: Theme.Size.marginWidth + 40, height: 720).background(Theme.windowBackground)
 }
 
 #Preview("urgent — red card") {
     MarginColumnView(content: .sampleUrgent)
-        .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
+        .padding(Theme.Spacing.lg).frame(width: Theme.Size.marginWidth + 40, height: 720).background(Theme.windowBackground)
 }

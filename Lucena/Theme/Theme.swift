@@ -27,6 +27,8 @@ enum Theme {
         static let correctGreen = Color(hex: 0x2E7D46) // solved / right move — the verdict check badge
         static let gold = Color(hex: 0xB8862F)         // active, accents, "▸", prompt
 
+        static let chipWhite = Color(hex: 0xFFFFFF)    // inline move chips on paper
+
         static let boardLight = Color(hex: 0xF1EDE3)
         static let boardDark = Color(hex: 0xE6E1D3)    // + 45° ink hatch (drawn separately)
         static let boardHatch = ink.opacity(0.30)

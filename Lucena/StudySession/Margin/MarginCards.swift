@@ -88,7 +88,7 @@ struct MarginCardView: View {
                 HStack(spacing: Theme.Spacing.xs) {
                     Text(Theme.Glyph.play)
                         .font(Theme.Typography.label)
-                        .foregroundStyle(Theme.Palette.gold)
+                        .foregroundStyle(Theme.Palette.ink45)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                     Text(card.title.uppercased() + (card.count.map { " (\($0))" } ?? ""))
                         .font(Theme.Typography.label)
@@ -99,24 +99,29 @@ struct MarginCardView: View {
             }
             .buttonStyle(.plain)
             if expanded {
+                // One ink, one register family — no colour circus (owner note).
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     ForEach(card.sections) { section in
                         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                             if let heading = section.heading {
                                 Text(heading)
                                     .font(Theme.Typography.cardHeading)
-                                    .foregroundStyle(Theme.Palette.coachBlue)
+                                    .foregroundStyle(Theme.Palette.ink82)
                             }
                             ForEach(section.rows) { row in
-                                CardRowView(row: row, onSquareTap: onSquareTap)
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                                    CardRowView(row: row, onSquareTap: onSquareTap)
+                                    // ruled entries (owner): a faint line after
+                                    // each statement, like a ledger's rule
+                                    Rectangle()
+                                        .fill(Theme.Palette.ink12)
+                                        .frame(height: 1)
+                                }
                             }
                         }
                     }
                 }
                 .padding(.leading, Theme.Spacing.md)
-                .overlay(alignment: .leading) {     // a book's marginal rule
-                    Rectangle().fill(Theme.Palette.ink18).frame(width: 1)
-                }
             }
         }
     }
@@ -124,35 +129,30 @@ struct MarginCardView: View {
 
 private struct CardRowView: View {
     let row: CardRow
-    var onSquareTap: (String) -> Void
+    var onSquareTap: (String) -> Void   // kept for the wiring pass (tap → arrow)
 
+    /// ONE line per row: prose and notation run together and wrap as a single
+    /// paragraph; each move/square sits in a small WHITE box (owner note) —
+    /// attributed background runs, so the boxes ride the line and wrap with it.
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.hair) {
-            Text(row.text)
-                .font(Theme.Typography.cardBody)
-                .foregroundStyle(Theme.Palette.ink82)
-                .fixedSize(horizontal: false, vertical: true)
-            if !row.moves.isEmpty || !row.squares.isEmpty {
-                HStack(spacing: Theme.Spacing.xs) {
-                    if !row.moves.isEmpty {
-                        Text(row.moves.joined(separator: " "))
-                            .font(Theme.Typography.cardMove)
-                            .foregroundStyle(Theme.Palette.coachBlue)
-                    }
-                    ForEach(row.squares, id: \.self) { sq in
-                        Button { onSquareTap(sq) } label: {
-                            Text(sq)
-                                .font(Theme.Typography.squareTag)
-                                .foregroundStyle(Theme.Palette.ink70)
-                                .padding(.horizontal, Theme.Spacing.xxs)
-                                .padding(.vertical, Theme.Spacing.hair)
-                                .overlay(Rectangle().stroke(Theme.Palette.ink22, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+        Text(attributed)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var attributed: AttributedString {
+        var out = AttributedString(row.text)
+        out.font = Theme.Typography.cardBody
+        out.foregroundColor = Theme.Palette.ink82
+        for bit in row.moves + row.squares {
+            var gap = AttributedString("  ")
+            gap.font = Theme.Typography.cardBody
+            var chip = AttributedString("\u{2009}\(bit)\u{2009}")   // thin-space padding inside the box
+            chip.font = Theme.Typography.cardMove
+            chip.foregroundColor = Theme.Palette.ink
+            chip.backgroundColor = Theme.Palette.chipWhite
+            out += gap + chip
         }
+        return out
     }
 }
 
@@ -191,36 +191,22 @@ struct UrgentCardView: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
-            ornamentRule
-            Text(card.mark)
-                .font(Theme.Typography.studyMark)
-                .foregroundStyle(Theme.Palette.mistakeRed)
             Text(card.text.uppercased())
                 .font(Theme.Typography.studyCaption)
                 .tracking(Theme.Tracking.labelWide)
                 .foregroundStyle(Theme.Palette.ink82)
                 .multilineTextAlignment(.center)
             Button(action: action) {
-                Text(card.buttonTitle.uppercased())
+                Text(card.buttonTitle.uppercased() + " \u{2192}")
                     .font(Theme.Typography.label)
-                    .tracking(Theme.Tracking.label)
-                    .foregroundStyle(Theme.Palette.mistakeRed)
-                    .padding(.bottom, Theme.Spacing.hair)
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(Theme.Palette.mistakeRed).frame(height: 1)
-                    }
+                    .tracking(Theme.Tracking.button)
+                    .foregroundStyle(Theme.Palette.paper)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Rectangle().fill(Theme.Palette.ink))
             }
             .buttonStyle(.plain)
-            ornamentRule
         }
         .frame(maxWidth: .infinity)
-    }
-
-    /// The printed section-break: a short centered rule, the way a book sets
-    /// off a study from the text around it.
-    private var ornamentRule: some View {
-        Rectangle()
-            .fill(Theme.Palette.ink22)
-            .frame(width: Theme.Spacing.xxl, height: 1)
     }
 }
