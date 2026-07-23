@@ -1529,6 +1529,8 @@ struct StudySessionScreen: View {
                                  currentIndex: currentPlyIndex) { i in
                         viewIndex = i >= liveIndex ? nil : i
                     }
+                case .margin:
+                    MarginPreviewPane()          // v1 redesign review — fixtures, unwired
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1634,13 +1636,17 @@ struct StudySessionScreen: View {
     }
 }
 
-/// The right-column tabs: the coach conversation, or the analysis panel.
+/// The right-column tabs: the coach conversation, the analysis panel, and —
+/// while the v1 redesign is under review — the MARGIN preview (fixture-driven,
+/// unwired; V1_LAYOUT.md). The margin tab is design furniture: it replaces
+/// the other two once the API pass lands, then this enum shrinks.
 private enum RightTab: CaseIterable {
-    case coach, analysis
+    case coach, analysis, margin
     var title: LocalizedStringKey {
         switch self {
         case .coach: return Strings.StudySession.tabCoach
         case .analysis: return Strings.StudySession.tabAnalysis
+        case .margin: return "Margin"
         }
     }
 }

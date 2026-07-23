@@ -64,6 +64,19 @@ enum Theme {
         static let youBubble = serif(15)
         static let mark = serif(21, .semibold) // ?! ! glyph
 
+        // The MARGIN's registers (V1_LAYOUT.md): masthead chrome, the epigraph,
+        // resting-grey quiet lines, card bodies, the rook's marginalia voice.
+        static let masthead = serif(13.5, .semibold)     // rendered uppercased + tracked
+        static let epigraph = serif(16).italic()
+        static let epigraphCredit = serif(12)
+        static let restingProse = serif(13.5)
+        static let marginalia = serif(15).italic()       // the rook's one-liner
+        static let cardBody = serif(13.5)
+        static let cardHeading = serif(12.5, .semibold)
+        static let urgentBody = serif(15, .semibold)
+        static let cardMove = Font.custom("Menlo", size: 12)
+        static let squareTag = Font.custom("Menlo", size: 10.5)
+
         /// Brand serif (Lora). Change the family here and it changes everywhere.
         static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
             Font.custom("Lora", size: size).weight(weight)
@@ -122,6 +135,10 @@ enum Theme {
         // move list
         static let moveNumberColumn: CGFloat = 34    // "12." gutter
         static let moveCell: CGFloat = 92            // a white/black move cell
+        // margin (the v1 right column)
+        static let marginWidth: CGFloat = 320
+        static let rookAvatar: CGFloat = 30
+        static let rookIdle: CGFloat = 44            // the resting state's watchful rook
     }
 
     // MARK: Symbol — named SF Symbols.
