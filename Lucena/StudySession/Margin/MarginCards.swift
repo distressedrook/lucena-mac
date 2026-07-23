@@ -108,6 +108,9 @@ struct MarginCardView: View {
                                     .font(Theme.Typography.cardHeading)
                                     .foregroundStyle(Theme.Palette.ink82)
                             }
+                            if let tag = section.tag {
+                                MarginBadge(text: tag)   // Short term / Long term
+                            }
                             ForEach(section.rows) { row in
                                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                                     CardRowView(row: row, onSquareTap: onSquareTap)

@@ -69,6 +69,7 @@ struct MarginCard: Identifiable {
 struct CardSection: Identifiable {
     let id = UUID()
     var heading: String?
+    var tag: String?                    // "Short term" | "Long term" (plan ideas)
     var rows: [CardRow]
 }
 
@@ -251,10 +252,11 @@ extension MarginCard: Decodable {
 }
 
 extension CardSection: Decodable {
-    private enum CodingKeys: String, CodingKey { case heading, rows }
+    private enum CodingKeys: String, CodingKey { case heading, tag, rows }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         heading = try c.decodeIfPresent(String.self, forKey: .heading)
+        tag = try c.decodeIfPresent(String.self, forKey: .tag)
         rows = try c.decodeIfPresent([CardRow].self, forKey: .rows) ?? []
     }
 }
