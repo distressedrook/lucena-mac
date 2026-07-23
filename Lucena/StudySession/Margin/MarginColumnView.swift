@@ -100,6 +100,14 @@ struct MarginColumnView: View {
                         .tracking(Theme.Tracking.label)
                         .foregroundStyle(Theme.Palette.ink45)
                 }
+                if content.evalBadge != nil || content.characterBadge != nil {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        if let b = content.evalBadge { MarginBadge(text: b, strong: true) }
+                        if let b = content.characterBadge { MarginBadge(text: b, strong: false) }
+                    }
+                    .padding(.top, Theme.Spacing.hair)
+                    .padding(.bottom, Theme.Spacing.xxs)
+                }
                 Rectangle().fill(Theme.Palette.ink22).frame(height: 1)
             }
         }
@@ -138,4 +146,23 @@ struct MarginColumnView: View {
 #Preview("urgent — red card") {
     MarginColumnView(content: .sampleUrgent)
         .padding(Theme.Spacing.lg).frame(width: Theme.Size.marginWidth + 40, height: 720).background(Theme.windowBackground)
+}
+
+
+/// A printed badge: uppercase chrome in a hairline box. `strong` (the eval
+/// verdict) sets a touch more ink than the character tag.
+struct MarginBadge: View {
+    let text: String
+    var strong: Bool = false
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(Theme.Typography.labelSmall)
+            .tracking(Theme.Tracking.label)
+            .foregroundStyle(strong ? Theme.Palette.ink82 : Theme.Palette.ink55)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.vertical, Theme.Spacing.hair)
+            .overlay(Rectangle().stroke(
+                strong ? Theme.Palette.ink45 : Theme.Palette.ink22, lineWidth: 1))
+    }
 }
