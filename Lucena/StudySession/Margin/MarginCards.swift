@@ -191,26 +191,36 @@ struct UrgentCardView: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
-            Text(card.text)
-                .font(Theme.Typography.heading)
+            ornamentRule
+            Text(card.mark)
+                .font(Theme.Typography.studyMark)
                 .foregroundStyle(Theme.Palette.mistakeRed)
+            Text(card.text.uppercased())
+                .font(Theme.Typography.studyCaption)
+                .tracking(Theme.Tracking.labelWide)
+                .foregroundStyle(Theme.Palette.ink82)
                 .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
             Button(action: action) {
                 Text(card.buttonTitle.uppercased())
                     .font(Theme.Typography.label)
-                    .tracking(Theme.Tracking.button)
-                    .foregroundStyle(Theme.Palette.paper)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Rectangle().fill(Theme.Palette.mistakeRed))
+                    .tracking(Theme.Tracking.label)
+                    .foregroundStyle(Theme.Palette.mistakeRed)
+                    .padding(.bottom, Theme.Spacing.hair)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(Theme.Palette.mistakeRed).frame(height: 1)
+                    }
             }
             .buttonStyle(.plain)
+            ornamentRule
         }
-        .padding(.vertical, Theme.Spacing.xl)
-        .padding(.horizontal, Theme.Spacing.lg)
-        .background(Rectangle().fill(Theme.Palette.mistakeRed.opacity(0.06)))
-        .overlay(Rectangle().stroke(Theme.Palette.mistakeRed.opacity(0.7), lineWidth: 1))
-        .padding(.horizontal, Theme.Spacing.sm)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The printed section-break: a short centered rule, the way a book sets
+    /// off a study from the text around it.
+    private var ornamentRule: some View {
+        Rectangle()
+            .fill(Theme.Palette.ink22)
+            .frame(width: Theme.Spacing.xxl, height: 1)
     }
 }

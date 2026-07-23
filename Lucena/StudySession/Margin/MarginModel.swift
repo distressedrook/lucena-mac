@@ -76,11 +76,15 @@ struct CardRow: Identifiable {
     var squares: [String] = []          // square tags — the future arrow taps
 }
 
-/// The urgent notice. When a forced win exists NOTHING ELSE MATTERS (owner
-/// ruling): the margin shows this alone, big and centered. Still typographic
-/// — never a modal, never covers the board (the drill-invitation ruling).
+/// The urgent moment, set the way chess print has always set it: a STUDY
+/// CAPTION. The Informant mark ("+−" = White is winning, "−+" = Black) in
+/// red ink over the canonical caption ("White to play and win."), no box,
+/// no wash — the composition and the whitespace do the work. When a forced
+/// win exists nothing else matters (owner ruling): this replaces the margin
+/// body. Never a modal, never covers the board.
 struct UrgentCard {
-    let text: String
+    var mark: String = "+\u{2212}"      // Informant evaluation symbol
+    let text: String                    // the caption — "White to play and win."
     let buttonTitle: String             // "Drill it"
 }
 
@@ -171,7 +175,7 @@ extension MarginContent {
         epigraph: nil, theory: nil,
         rookLine: nil,
         cards: [],                       // nothing else matters
-        urgent: UrgentCard(text: "White has a forcing win in this position.",
+        urgent: UrgentCard(text: "White to play and win.",
                            buttonTitle: "Drill it"),
         commandHints: ["drill it"])
 }

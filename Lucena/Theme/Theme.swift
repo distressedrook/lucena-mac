@@ -74,6 +74,8 @@ enum Theme {
         static let cardBody = serif(13.5)
         static let cardHeading = serif(12.5, .semibold)
         static let urgentBody = serif(15, .semibold)
+        static let studyMark = serif(46, .semibold)      // the "+−" — the urgent state's one big thing
+        static let studyCaption = serif(13, .semibold)   // "WHITE TO PLAY AND WIN", tracked
         static let cardMove = Font.custom("Menlo", size: 12)
         static let squareTag = Font.custom("Menlo", size: 10.5)
 
