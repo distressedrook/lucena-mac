@@ -190,29 +190,27 @@ struct UrgentCardView: View {
     var action: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .center, spacing: Theme.Spacing.sm) {
-            Text(card.glyph)
-                .font(Theme.Typography.cardBody)
-                .foregroundStyle(Theme.Palette.mistakeRed)
+        VStack(spacing: Theme.Spacing.lg) {
             Text(card.text)
-                .font(Theme.Typography.cardHeading)
+                .font(Theme.Typography.heading)
                 .foregroundStyle(Theme.Palette.mistakeRed)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: Theme.Spacing.xs)
             Button(action: action) {
-                Text(card.buttonTitle)
-                    .font(Theme.Typography.labelSmall)
+                Text(card.buttonTitle.uppercased())
+                    .font(Theme.Typography.label)
                     .tracking(Theme.Tracking.button)
                     .foregroundStyle(Theme.Palette.paper)
-                    .padding(.horizontal, Theme.Spacing.sm)
-                    .padding(.vertical, Theme.Spacing.xxs)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
                     .background(Rectangle().fill(Theme.Palette.mistakeRed))
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, Theme.Spacing.xs)
-        .background(Rectangle().fill(Theme.Palette.mistakeRed.opacity(0.07)))
+        .padding(.vertical, Theme.Spacing.xl)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .background(Rectangle().fill(Theme.Palette.mistakeRed.opacity(0.06)))
         .overlay(Rectangle().stroke(Theme.Palette.mistakeRed.opacity(0.7), lineWidth: 1))
+        .padding(.horizontal, Theme.Spacing.sm)
     }
 }

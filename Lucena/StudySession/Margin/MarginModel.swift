@@ -8,8 +8,9 @@ import Foundation
 ///
 ///   epigraph → move 1 (the book opens) · theory → in book · cards →
 ///   everything after (the quiet position is itself a POSITION card — owner
-///   ruling: "there is no rest; either move 1, book, or card"). An urgent
-///   notice (compact, red) rides ABOVE the cards when a tactic fires.
+///   ruling: "there is no rest; either move 1, book, or card"). When a
+///   tactic fires, the urgent notice REPLACES everything — a forced win is
+///   the position; the margin centers on it alone.
 struct MarginContent {
     var masthead: String?               // opening name — "SCANDINAVIAN DEFENSE"
     var statusLine: String?             // chrome under the masthead — "MIDDLEGAME · MOVE 14"
@@ -75,10 +76,10 @@ struct CardRow: Identifiable {
     var squares: [String] = []          // square tags — the future arrow taps
 }
 
-/// The urgent notice: loudest thing in the column, still typographic — never
-/// a modal, never covers the board (the drill-invitation ruling).
+/// The urgent notice. When a forced win exists NOTHING ELSE MATTERS (owner
+/// ruling): the margin shows this alone, big and centered. Still typographic
+/// — never a modal, never covers the board (the drill-invitation ruling).
 struct UrgentCard {
-    let glyph: String                   // "⚔"
     let text: String
     let buttonTitle: String             // "Drill it"
 }
@@ -169,16 +170,8 @@ extension MarginContent {
         statusLine: "MIDDLEGAME · MOVE 17",
         epigraph: nil, theory: nil,
         rookLine: nil,
-        cards: [
-            MarginCard(id: "position", title: "Position", sections: [
-                CardSection(rows: [
-                    CardRow(text: "White is much better"),
-                    CardRow(text: "Black's king is exposed", squares: ["g8", "h7"]),
-                ]),
-            ]),
-        ],
-        urgent: UrgentCard(glyph: "⚔",
-                           text: "White has a forcing win.",
+        cards: [],                       // nothing else matters
+        urgent: UrgentCard(text: "White has a forcing win in this position.",
                            buttonTitle: "Drill it"),
         commandHints: ["drill it"])
 }

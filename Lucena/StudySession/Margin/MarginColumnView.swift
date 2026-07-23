@@ -4,8 +4,9 @@ import SwiftUI
 /// margin, not a chat: it reads the CURRENT position only and re-renders as
 /// the navigator cursor moves. Owner ruling: no resting state — the margin
 /// always shows the move-1 epigraph, the in-book theory card, or cards (the
-/// quiet position is itself a POSITION card). A compact red urgent notice
-/// rides above the cards when a tactic fires. No logos in the margin.
+/// quiet position is itself a POSITION card). When a tactic fires the urgent
+/// notice REPLACES everything, big and centered — a forced win IS the
+/// position. No logos in the margin.
 ///
 /// Unwired by design (owner: "build the UI, don't wire the APIs yet"):
 /// callbacks are plumbed and default to no-ops; fixtures drive the previews.
@@ -23,38 +24,41 @@ struct MarginColumnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.none) {
             masthead
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    if let epigraph = content.epigraph {
-                        EpigraphView(epigraph: epigraph)
-                    } else if let theory = content.theory {
-                        TheoryCardView(card: theory, onDoorTap: onDoorTap)
-                    } else {
-                        if let urgent = content.urgent {
-                            UrgentCardView(card: urgent, action: onDrill)
-                        }
-                        if let rook = content.rookLine {
-                            RookMarginaliaView(line: rook)
-                        }
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            ForEach(content.cards) { card in
-                                MarginCardView(card: card,
-                                               expanded: expandedCard == card.id,
-                                               onToggle: {
-                                                   withAnimation(.easeInOut(duration: 0.18)) {
-                                                       expandedCard = expandedCard == card.id ? nil : card.id
-                                                   }
-                                               },
-                                               onSquareTap: onSquareTap)
+            if let urgent = content.urgent {
+                // A forced win IS the position — the notice alone, centered.
+                UrgentCardView(card: urgent, action: onDrill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        if let epigraph = content.epigraph {
+                            EpigraphView(epigraph: epigraph)
+                        } else if let theory = content.theory {
+                            TheoryCardView(card: theory, onDoorTap: onDoorTap)
+                        } else {
+                            if let rook = content.rookLine {
+                                RookMarginaliaView(line: rook)
+                            }
+                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                ForEach(content.cards) { card in
+                                    MarginCardView(card: card,
+                                                   expanded: expandedCard == card.id,
+                                                   onToggle: {
+                                                       withAnimation(.easeInOut(duration: 0.18)) {
+                                                           expandedCard = expandedCard == card.id ? nil : card.id
+                                                       }
+                                                   },
+                                                   onSquareTap: onSquareTap)
+                                }
                             }
                         }
                     }
+                    .padding(.top, Theme.Spacing.lg)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.top, Theme.Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.never)             // paper doesn't have scrollbars
+                Spacer(minLength: Theme.Spacing.sm)
             }
-            .scrollIndicators(.never)                 // paper doesn't have scrollbars
-            Spacer(minLength: Theme.Spacing.sm)
             footer
         }
         .frame(width: Theme.Size.marginWidth, alignment: .leading)
