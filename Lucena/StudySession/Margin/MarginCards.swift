@@ -162,8 +162,10 @@ struct RookMarginaliaView: View {
     let line: RookLine
 
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-            RookAvatarView(pose: pose, size: Theme.Size.coachAvatar)
+        HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+            Text(Theme.Glyph.play)
+                .font(Theme.Typography.label)
+                .foregroundStyle(accent)
             Text(line.text)
                 .font(Theme.Typography.marginalia)
                 .foregroundStyle(Theme.Palette.coachBlue)
@@ -172,11 +174,11 @@ struct RookMarginaliaView: View {
         }
     }
 
-    private var pose: RookAvatarView.Pose {
+    private var accent: Color {
         switch line.tone {
-        case .praise: .praise
-        case .teach: .teach
-        case .correct: .correct
+        case .praise: Theme.Palette.correctGreen
+        case .teach: Theme.Palette.gold
+        case .correct: Theme.Palette.mistakeRed
         }
     }
 }
@@ -188,29 +190,29 @@ struct UrgentCardView: View {
     var action: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                Text(card.glyph)
-                    .font(Theme.Typography.mark)
-                    .foregroundStyle(Theme.Palette.mistakeRed)
-                Text(card.text)
-                    .font(Theme.Typography.urgentBody)
-                    .foregroundStyle(Theme.Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+            Text(card.glyph)
+                .font(Theme.Typography.cardBody)
+                .foregroundStyle(Theme.Palette.mistakeRed)
+            Text(card.text)
+                .font(Theme.Typography.cardHeading)
+                .foregroundStyle(Theme.Palette.mistakeRed)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: Theme.Spacing.xs)
             Button(action: action) {
                 Text(card.buttonTitle)
-                    .font(Theme.Typography.label)
+                    .font(Theme.Typography.labelSmall)
                     .tracking(Theme.Tracking.button)
                     .foregroundStyle(Theme.Palette.paper)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xs)
-                    .background(Rectangle().fill(Theme.Palette.ink))
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, Theme.Spacing.xxs)
+                    .background(Rectangle().fill(Theme.Palette.mistakeRed))
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(Theme.Spacing.md)
-        .overlay(Rectangle().stroke(Theme.Palette.ink, lineWidth: 1))
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Rectangle().fill(Theme.Palette.mistakeRed.opacity(0.07)))
+        .overlay(Rectangle().stroke(Theme.Palette.mistakeRed.opacity(0.7), lineWidth: 1))
     }
 }

@@ -6,30 +6,19 @@ import Foundation
 /// transcript); salience upstream decides which fields are populated, and the
 /// view derives its visual state from what's present:
 ///
-///   urgent      → the urgent card (full ink, one button)
-///   rook/cards  → noted (one-liner + card stack, ≤1 expanded)
-///   theory      → in-book (idea line + labeled doors)
-///   epigraph    → move 1 (the book opens)
-///   otherwise   → resting (always-true quiet reads; the margin is never empty)
+///   epigraph → move 1 (the book opens) · theory → in book · cards →
+///   everything after (the quiet position is itself a POSITION card — owner
+///   ruling: "there is no rest; either move 1, book, or card"). An urgent
+///   notice (compact, red) rides ABOVE the cards when a tactic fires.
 struct MarginContent {
     var masthead: String?               // opening name — "SCANDINAVIAN DEFENSE"
+    var statusLine: String?             // chrome under the masthead — "MIDDLEGAME · MOVE 14"
     var epigraph: Epigraph?             // move 1 only
     var theory: TheoryCard?             // in book only
-    var restingLines: [RestingLine]     // always available (phase, eval-in-words, structure)
-    var rookLine: RookLine?             // noted: the coach's one-liner (≤2 lines, hard budget)
-    var cards: [MarginCard]             // noted: collapsed headers; the view expands at most one
-    var urgent: UrgentCard?             // urgent: tactic / drill offer / blunder
+    var rookLine: RookLine?             // the coach's one-liner (≤2 lines, hard budget)
+    var cards: [MarginCard]             // the card stack; the view expands at most one
+    var urgent: UrgentCard?             // compact red notice above the cards
     var commandHints: [String]          // rotating placeholder for the command field
-}
-
-/// One quiet line of the resting state. `register` picks the ink voice:
-/// chrome (mono, for "MIDDLEGAME · MOVE 14") vs prose (small serif, for
-/// "Carlsbad structure · calm").
-struct RestingLine: Identifiable {
-    enum Register { case chrome, prose }
-    let id = UUID()
-    let text: String
-    var register: Register = .prose
 }
 
 /// The move-1 epigraph — a fact-checked quote (lucena_core.content.epigraph,
@@ -100,18 +89,19 @@ extension MarginContent {
     /// Move 1: the book opens — epigraph + the opening naming itself.
     static let sampleMove1 = MarginContent(
         masthead: "King's Pawn Game",
+        statusLine: nil,
         epigraph: Epigraph(
             quote: "Every pawn is a potential queen.",
             author: "James Mason",
             source: "The Art of Chess, 1895"),
         theory: nil,
-        restingLines: [],
         rookLine: nil, cards: [], urgent: nil,
         commandHints: ["give me a puzzle", "what are my stats?", "endgame lesson"])
 
     /// In book: the theory card with labeled doors.
     static let sampleTheory = MarginContent(
         masthead: "Scandinavian Defense",
+        statusLine: "OPENING · MOVE 3",
         epigraph: nil,
         theory: TheoryCard(
             idea: "Black trades the center pawn at once for early queen activity — "
@@ -122,30 +112,32 @@ extension MarginContent {
                 TheoryDoor(san: "Qd6", variation: "Modern Variation", typicalPct: 31),
                 TheoryDoor(san: "Qd8", variation: "Valencian Variation", typicalPct: 9),
             ]),
-        restingLines: [],
         rookLine: nil, cards: [], urgent: nil,
         commandHints: ["give me a puzzle", "show the plan"])
 
-    /// Resting: nothing clears the bar — the always-true quiet reads.
-    static let sampleResting = MarginContent(
+    /// Quiet: nothing salient — the position's state IS the card.
+    static let sampleQuiet = MarginContent(
         masthead: "Scandinavian Defense",
+        statusLine: "MIDDLEGAME · MOVE 14",
         epigraph: nil, theory: nil,
-        restingLines: [
-            RestingLine(text: "MIDDLEGAME · MOVE 14", register: .chrome),
-            RestingLine(text: "Roughly equal · material even"),
-            RestingLine(text: "Carlsbad structure · calm"),
+        rookLine: nil,
+        cards: [
+            MarginCard(id: "position", title: "Position", sections: [
+                CardSection(rows: [
+                    CardRow(text: "Roughly equal · material even"),
+                    CardRow(text: "Carlsbad structure · calm"),
+                    CardRow(text: "Kings castled short on both sides"),
+                ]),
+            ]),
         ],
-        rookLine: nil, cards: [], urgent: nil,
+        urgent: nil,
         commandHints: ["give me a puzzle", "what are my stats?"])
 
     /// Noted: the book-exit moment — rook line + plan card + facts.
     static let sampleNoted = MarginContent(
         masthead: "Scandinavian Defense",
+        statusLine: "MIDDLEGAME · MOVE 12",
         epigraph: nil, theory: nil,
-        restingLines: [
-            RestingLine(text: "MIDDLEGAME · MOVE 12", register: .chrome),
-            RestingLine(text: "Roughly equal · material even"),
-        ],
         rookLine: RookLine(text: "Book ends here. This is the real game now.", tone: .teach),
         cards: [
             MarginCard(id: "plan-white", title: "Plan for White", sections: [
@@ -174,13 +166,19 @@ extension MarginContent {
     /// Urgent: a forcing win exists — the drill invitation.
     static let sampleUrgent = MarginContent(
         masthead: "Scandinavian Defense",
+        statusLine: "MIDDLEGAME · MOVE 17",
         epigraph: nil, theory: nil,
-        restingLines: [
-            RestingLine(text: "MIDDLEGAME · MOVE 17", register: .chrome),
+        rookLine: nil,
+        cards: [
+            MarginCard(id: "position", title: "Position", sections: [
+                CardSection(rows: [
+                    CardRow(text: "White is much better"),
+                    CardRow(text: "Black's king is exposed", squares: ["g8", "h7"]),
+                ]),
+            ]),
         ],
-        rookLine: nil, cards: [],
         urgent: UrgentCard(glyph: "⚔",
-                           text: "White has a forcing win in this position.",
+                           text: "White has a forcing win.",
                            buttonTitle: "Drill it"),
         commandHints: ["drill it"])
 }

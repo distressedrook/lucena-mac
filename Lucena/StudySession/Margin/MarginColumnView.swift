@@ -2,9 +2,10 @@ import SwiftUI
 
 /// THE MARGIN — the v1 right column (mac-client/V1_LAYOUT.md). A book
 /// margin, not a chat: it reads the CURRENT position only and re-renders as
-/// the navigator cursor moves. Three salience states (resting / noted /
-/// urgent) plus the two book phases (move-1 epigraph, in-book theory), all
-/// derived from which fields of `MarginContent` are populated.
+/// the navigator cursor moves. Owner ruling: no resting state — the margin
+/// always shows the move-1 epigraph, the in-book theory card, or cards (the
+/// quiet position is itself a POSITION card). A compact red urgent notice
+/// rides above the cards when a tactic fires. No logos in the margin.
 ///
 /// Unwired by design (owner: "build the UI, don't wire the APIs yet"):
 /// callbacks are plumbed and default to no-ops; fixtures drive the previews.
@@ -24,17 +25,29 @@ struct MarginColumnView: View {
             masthead
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    if let urgent = content.urgent {
-                        restingBlock(compact: true)
-                        UrgentCardView(card: urgent, action: onDrill)
-                    } else if content.rookLine != nil || !content.cards.isEmpty {
-                        notedBlock
+                    if let epigraph = content.epigraph {
+                        EpigraphView(epigraph: epigraph)
                     } else if let theory = content.theory {
                         TheoryCardView(card: theory, onDoorTap: onDoorTap)
-                    } else if let epigraph = content.epigraph {
-                        EpigraphView(epigraph: epigraph)
                     } else {
-                        restingBlock(compact: false)
+                        if let urgent = content.urgent {
+                            UrgentCardView(card: urgent, action: onDrill)
+                        }
+                        if let rook = content.rookLine {
+                            RookMarginaliaView(line: rook)
+                        }
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            ForEach(content.cards) { card in
+                                MarginCardView(card: card,
+                                               expanded: expandedCard == card.id,
+                                               onToggle: {
+                                                   withAnimation(.easeInOut(duration: 0.18)) {
+                                                       expandedCard = expandedCard == card.id ? nil : card.id
+                                                   }
+                                               },
+                                               onSquareTap: onSquareTap)
+                            }
+                        }
                     }
                 }
                 .padding(.top, Theme.Spacing.lg)
@@ -49,7 +62,7 @@ struct MarginColumnView: View {
         .onChange(of: content.cards.first?.id) { _, first in expandedCard = first }
     }
 
-    // MARK: masthead — the opening names itself; a hairline under it.
+    // MARK: masthead — the opening names itself; status chrome; a hairline.
 
     @ViewBuilder private var masthead: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -59,92 +72,30 @@ struct MarginColumnView: View {
                 .foregroundStyle(Theme.Palette.ink82)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let status = content.statusLine {
+                Text(status)
+                    .font(Theme.Typography.labelSmall)
+                    .tracking(Theme.Tracking.label)
+                    .foregroundStyle(Theme.Palette.ink45)
+            }
             Rectangle().fill(Theme.Palette.ink22).frame(height: 1)
         }
     }
 
-    // MARK: resting — always-true quiet reads; the margin is never empty.
-
-    @ViewBuilder private func restingBlock(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            ForEach(content.restingLines) { line in
-                switch line.register {
-                case .chrome:
-                    Text(line.text)
-                        .font(Theme.Typography.label)
-                        .tracking(Theme.Tracking.label)
-                        .foregroundStyle(Theme.Palette.ink45)
-                case .prose:
-                    Text(line.text)
-                        .font(Theme.Typography.restingProse)
-                        .foregroundStyle(Theme.Palette.ink55)
-                }
-            }
-        }
-        if !compact {
-            // Confident book-margin whitespace: the idle rook watches the
-            // board, and the emptiness reads as "nothing needs your attention".
-            VStack(spacing: Theme.Spacing.sm) {
-                RookAvatarView(pose: .idle, size: Theme.Size.rookIdle)
-                if let hint = content.commandHints.first {
-                    Text("Try: \u{201C}\(hint)\u{201D}")
-                        .font(Theme.Typography.epigraphCredit)
-                        .foregroundStyle(Theme.Palette.ink45)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, Theme.Spacing.xxxl)
-        }
-    }
-
-    // MARK: noted — the rook's one-liner + the card stack, one open.
-
-    @ViewBuilder private var notedBlock: some View {
-        restingBlock(compact: true)
-        if let rook = content.rookLine {
-            RookMarginaliaView(line: rook)
-        }
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            ForEach(content.cards) { card in
-                MarginCardView(card: card,
-                               expanded: expandedCard == card.id,
-                               onToggle: {
-                                   withAnimation(.easeInOut(duration: 0.18)) {
-                                       expandedCard = expandedCard == card.id ? nil : card.id
-                                   }
-                               },
-                               onSquareTap: onSquareTap)
-            }
-        }
-    }
-
-    // MARK: footer — the rook beside the command field, above nothing else.
+    // MARK: footer — the command field alone (no logos in the margin).
 
     @ViewBuilder private var footer: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Rectangle().fill(Theme.Palette.ink22).frame(height: 1)
-            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
-                RookAvatarView(pose: pose(for: content.rookLine?.tone),
-                               size: Theme.Size.rookAvatar)
-                MarginCommandField(hints: content.commandHints, onSubmit: onCommand)
-            }
-        }
-    }
-
-    private func pose(for tone: RookLine.Tone?) -> RookAvatarView.Pose {
-        switch tone {
-        case .praise: .praise
-        case .correct: .correct
-        case .teach: .teach
-        case nil: .idle
+            MarginCommandField(hints: content.commandHints, onSubmit: onCommand)
         }
     }
 }
 
-// MARK: - Previews (fixtures; the five margin moments)
+// MARK: - Previews (fixtures; the four margin moments)
 
-#Preview("resting") {
-    MarginColumnView(content: .sampleResting)
+#Preview("quiet — position card") {
+    MarginColumnView(content: .sampleQuiet)
         .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
 }
 
@@ -163,7 +114,7 @@ struct MarginColumnView: View {
         .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
 }
 
-#Preview("urgent — drill offer") {
+#Preview("urgent — red card") {
     MarginColumnView(content: .sampleUrgent)
         .padding(Theme.Spacing.lg).frame(height: 720).background(Theme.windowBackground)
 }
