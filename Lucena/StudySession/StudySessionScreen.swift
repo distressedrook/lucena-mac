@@ -1478,14 +1478,8 @@ struct StudySessionScreen: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            // No "ask coach" inside a puzzle — the puzzle surface is fully local (moves + Retry/Why only),
-            // there's no free-text coaching to type. The input is the session's, not the puzzle's.
-            if !inActivity {
-                ChatInputPaneView(maxHeight: columnHeight * 0.5, session: session, coach: coach,
-                                  loading: isWarmingUp || session == nil, sending: $coachSending,
-                                  onEngage: { withAnimation(.easeInOut(duration: 0.25)) { conversationStarted = true } })
-                    .frame(maxWidth: .infinity)
-            }
+            // The chatbox is GONE (owner, v1 wiring): free text was the chat
+            // era; instructions live in the margin's command field.
         }
     }
 
@@ -1497,6 +1491,11 @@ struct StudySessionScreen: View {
             Group {
                 switch rightTab {
                 case .coach:
+                    if !(inActivity || drillGoverns) {
+                        // v1: the margin IS the coach surface (owner wiring
+                        // step a: the conversation view goes away).
+                        MarginLiveView(fen: displayedFen, sessionId: session, coach: coach)
+                    } else {
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         moveHead
                             // The caption line appears/disappears when the board changes (e.g. a reopen
@@ -1523,14 +1522,13 @@ struct StudySessionScreen: View {
                             chatFooter   // status + Retry / Why / show-me-the-trap — outside the scroll
                         }
                     }
+                    }
                 case .analysis:
                     AnalysisView(engineLines: stream?.engineLines, currentFen: displayedFen,
                                  analysisOn: $analysisOn, plies: history,
                                  currentIndex: currentPlyIndex) { i in
                         viewIndex = i >= liveIndex ? nil : i
                     }
-                case .margin:
-                    MarginPreviewPane()          // v1 redesign review — fixtures, unwired
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1636,17 +1634,14 @@ struct StudySessionScreen: View {
     }
 }
 
-/// The right-column tabs: the coach conversation, the analysis panel, and —
-/// while the v1 redesign is under review — the MARGIN preview (fixture-driven,
-/// unwired; V1_LAYOUT.md). The margin tab is design furniture: it replaces
-/// the other two once the API pass lands, then this enum shrinks.
+/// The right-column tabs: the MARGIN (the v1 coach surface — the
+/// conversation view is retired) and the analysis panel.
 private enum RightTab: CaseIterable {
-    case coach, analysis, margin
+    case coach, analysis
     var title: LocalizedStringKey {
         switch self {
-        case .coach: return Strings.StudySession.tabCoach
+        case .coach: return "Margin"
         case .analysis: return Strings.StudySession.tabAnalysis
-        case .margin: return "Margin"
         }
     }
 }

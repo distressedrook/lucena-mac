@@ -176,3 +176,88 @@ extension MarginContent {
                            buttonTitle: "Drill it"),
         commandHints: ["drill it"])
 }
+
+
+// MARK: - Decoding (the /margin wire; UUID ids are local-only)
+
+extension MarginContent: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case masthead, statusLine, epigraph, theory, rookLine, cards, urgent, commandHints
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        masthead = try c.decodeIfPresent(String.self, forKey: .masthead)
+        statusLine = try c.decodeIfPresent(String.self, forKey: .statusLine)
+        epigraph = try c.decodeIfPresent(Epigraph.self, forKey: .epigraph)
+        theory = try c.decodeIfPresent(TheoryCard.self, forKey: .theory)
+        rookLine = try c.decodeIfPresent(RookLine.self, forKey: .rookLine)
+        cards = try c.decodeIfPresent([MarginCard].self, forKey: .cards) ?? []
+        urgent = try c.decodeIfPresent(UrgentCard.self, forKey: .urgent)
+        commandHints = try c.decodeIfPresent([String].self, forKey: .commandHints) ?? []
+    }
+}
+
+extension Epigraph: Decodable {}
+extension UrgentCard: Decodable {}
+
+extension TheoryCard: Decodable {
+    private enum CodingKeys: String, CodingKey { case idea, doors }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        idea = try c.decodeIfPresent(String.self, forKey: .idea)
+        doors = try c.decodeIfPresent([TheoryDoor].self, forKey: .doors) ?? []
+    }
+}
+
+extension TheoryDoor: Decodable {
+    private enum CodingKeys: String, CodingKey { case san, variation, typicalPct }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        san = try c.decode(String.self, forKey: .san)
+        variation = try c.decodeIfPresent(String.self, forKey: .variation)
+        typicalPct = try c.decodeIfPresent(Int.self, forKey: .typicalPct)
+    }
+}
+
+extension RookLine: Decodable {
+    private enum CodingKeys: String, CodingKey { case text, tone }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        text = try c.decode(String.self, forKey: .text)
+        tone = switch try c.decodeIfPresent(String.self, forKey: .tone) {
+        case "praise": .praise
+        case "correct": .correct
+        default: .teach
+        }
+    }
+}
+
+extension MarginCard: Decodable {
+    private enum CodingKeys: String, CodingKey { case id, title, count, sections }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        count = try c.decodeIfPresent(Int.self, forKey: .count)
+        sections = try c.decodeIfPresent([CardSection].self, forKey: .sections) ?? []
+    }
+}
+
+extension CardSection: Decodable {
+    private enum CodingKeys: String, CodingKey { case heading, rows }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        heading = try c.decodeIfPresent(String.self, forKey: .heading)
+        rows = try c.decodeIfPresent([CardRow].self, forKey: .rows) ?? []
+    }
+}
+
+extension CardRow: Decodable {
+    private enum CodingKeys: String, CodingKey { case text, moves, squares }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        text = try c.decode(String.self, forKey: .text)
+        moves = try c.decodeIfPresent([String].self, forKey: .moves) ?? []
+        squares = try c.decodeIfPresent([String].self, forKey: .squares) ?? []
+    }
+}
