@@ -45,6 +45,15 @@ struct MarginColumnView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                     winningTips("CONVERTING", winning.advice)
                                     winningTips("DEFENDING", winning.defense)
+                                    if let kb = winning.kingBars, !kb.isEmpty {
+                                        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                            Text("KING SAFETY")
+                                                .font(Theme.Typography.cardHeading)
+                                                .tracking(Theme.Tracking.label)
+                                                .foregroundStyle(Theme.Palette.ink45)
+                                            ForEach(kb) { StatBar(label: $0.label, value: $0.value, mid: $0.mid) }
+                                        }
+                                    }
                                 }
                             } else {
                                 badges(sheet.assessment)

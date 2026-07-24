@@ -110,6 +110,13 @@ struct Winning: Decodable {
     let reason: String
     let advice: [String]
     let defense: [String]
+    /// King-safety bars shown even when winning (the diagnostic view) —
+    /// storm-aware, so they climb as an attack builds.
+    let kingBars: [Bar]?
+
+    private enum CodingKeys: String, CodingKey {
+        case reason, advice, defense, kingBars = "king_bars"
+    }
 }
 
 /// One labeled bar. `mid` (0.5) draws a contested midline for a centered,
