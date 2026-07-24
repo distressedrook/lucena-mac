@@ -59,6 +59,16 @@ struct Epigraph: Decodable {
 struct Theory: Decodable {
     let idea: String?
     let doors: [Door]
+    /// Set when `idea` is quoted from an external source (Wikibooks, CC
+    /// BY-SA) rather than our own authored annotation — the license REQUIRES
+    /// this credit + link be shown wherever the text appears.
+    let attribution: Attribution?
+}
+
+/// Source credit for externally-licensed theory text (CC BY-SA).
+struct Attribution: Decodable {
+    let text: String
+    let url: String
 }
 
 struct Door: Decodable, Identifiable {

@@ -11,32 +11,47 @@ struct MarginColumnView: View {
     @State private var showJSON = false
     @State private var breathing = false
 
+    /// The COVER (move 0): only an epigraph, nothing positional or theoretical.
+    /// Backend sends just the quote here, so the column shows only that —
+    /// centered (owner: "move 0, no positional stuff, just the quote,
+    /// centered").
+    private var isCover: Bool {
+        content.epigraph != nil && content.theory == nil
+            && content.sheet == nil && !content.plansPending
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.none) {
             status
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    // AUTHORED content leads the column when present — the
-                    // book opens with its epigraph, then names itself.
-                    if let e = content.epigraph { epigraph(e) }
-                    if let t = content.theory { theoryCard(t) }
-                    if let sheet = content.sheet {
-                        badges(sheet.assessment)
-                        SideReportView(title: "White", side: sheet.sides.white)
-                        SideReportView(title: "Black", side: sheet.sides.black)
-                    } else if content.plansPending {
-                        readingPlaceholder
-                    } else {
-                        Text("No read for this position.")
-                            .font(Theme.Typography.restingProse)
-                            .foregroundStyle(Theme.Palette.ink45)
+            if isCover, let e = content.epigraph {
+                epigraph(e, centered: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(Theme.Spacing.lg)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        // AUTHORED content leads the column when present — the
+                        // book opens with its epigraph, then names itself.
+                        if let e = content.epigraph { epigraph(e) }
+                        if let t = content.theory { theoryCard(t) }
+                        if let sheet = content.sheet {
+                            badges(sheet.assessment)
+                            SideReportView(title: "White", side: sheet.sides.white)
+                            SideReportView(title: "Black", side: sheet.sides.black)
+                        } else if content.plansPending {
+                            readingPlaceholder
+                        } else {
+                            Text("No read for this position.")
+                                .font(Theme.Typography.restingProse)
+                                .foregroundStyle(Theme.Palette.ink45)
+                        }
+                        if content.raw != nil { jsonSection }
                     }
-                    if content.raw != nil { jsonSection }
+                    .padding(.top, Theme.Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.top, Theme.Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.never)
             }
-            .scrollIndicators(.never)
             MarginCommandField(onSubmit: onCommand)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,11 +115,12 @@ struct MarginColumnView: View {
 
     /// Move 1: a sourced quote, set as a book's epigraph. Deterministic per
     /// session, so it never churns while you play.
-    @ViewBuilder private func epigraph(_ e: Epigraph) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+    @ViewBuilder private func epigraph(_ e: Epigraph, centered: Bool = false) -> some View {
+        VStack(alignment: centered ? .center : .leading, spacing: Theme.Spacing.xxs) {
             Text("\u{201C}\(e.quote)\u{201D}")
                 .font(Theme.Typography.epigraph)
                 .foregroundStyle(Theme.Palette.ink82)
+                .multilineTextAlignment(centered ? .center : .leading)
                 .fixedSize(horizontal: false, vertical: true)
             Text("\u{2014} \(e.author)")
                 .font(Theme.Typography.epigraphCredit)
@@ -113,12 +129,16 @@ struct MarginColumnView: View {
                 Text(src)
                     .font(Theme.Typography.epigraphCredit)
                     .foregroundStyle(Theme.Palette.ink45)
+                    .multilineTextAlignment(centered ? .center : .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.leading, Theme.Spacing.sm)
+        // the left rule is the margin-note look; a centered cover drops it.
+        .padding(.leading, centered ? 0 : Theme.Spacing.sm)
         .overlay(alignment: .leading) {
-            Rectangle().fill(Theme.Palette.ink22).frame(width: 1)
+            if !centered {
+                Rectangle().fill(Theme.Palette.ink22).frame(width: 1)
+            }
         }
     }
 
@@ -157,6 +177,16 @@ struct MarginColumnView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                }
+            }
+            // CC BY-SA credit — required whenever the idea is quoted theory.
+            if let attr = t.attribution, let url = URL(string: attr.url) {
+                Link(destination: url) {
+                    Text(attr.text)
+                        .font(Theme.Typography.cardHeading)
+                        .tracking(Theme.Tracking.label)
+                        .foregroundStyle(Theme.Palette.ink45)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
