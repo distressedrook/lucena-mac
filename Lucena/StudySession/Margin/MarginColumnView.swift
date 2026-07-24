@@ -37,20 +37,14 @@ struct MarginColumnView: View {
                         if let sheet = content.sheet {
                             if let winning = sheet.winning {
                                 // outright winning -> only the reason + advice
-                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                // for the winner (converting) and the defender.
+                                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                                     Text(winning.reason)
                                         .font(Theme.Typography.restingProse)
                                         .foregroundStyle(Theme.Palette.ink)
                                         .fixedSize(horizontal: false, vertical: true)
-                                    ForEach(Array(winning.advice.enumerated()), id: \.offset) { _, tip in
-                                        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
-                                            Text("\u{2022}").foregroundStyle(Theme.Palette.ink45)
-                                            Text(tip)
-                                                .font(Theme.Typography.cardBody)
-                                                .foregroundStyle(Theme.Palette.ink82)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
+                                    winningTips("CONVERTING", winning.advice)
+                                    winningTips("DEFENDING", winning.defense)
                                 }
                             } else {
                                 badges(sheet.assessment)
@@ -96,6 +90,27 @@ struct MarginColumnView: View {
         let items = content.sheet?.badges ?? []
         if !items.isEmpty {
             FlowBadges(items: items)
+        }
+    }
+
+    /// A labeled block of winning/defending tips (server-authored strings).
+    @ViewBuilder private func winningTips(_ label: String, _ items: [String]) -> some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(label)
+                    .font(Theme.Typography.cardHeading)
+                    .tracking(Theme.Tracking.label)
+                    .foregroundStyle(Theme.Palette.ink45)
+                ForEach(Array(items.enumerated()), id: \.offset) { _, tip in
+                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+                        Text("\u{2022}").foregroundStyle(Theme.Palette.ink45)
+                        Text(tip)
+                            .font(Theme.Typography.cardBody)
+                            .foregroundStyle(Theme.Palette.ink82)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
     }
 

@@ -104,10 +104,12 @@ struct Sheet: Decodable {
     let winning: Winning?
 }
 
-/// The outright-winning read: the reason + generic advice for the winner.
+/// The outright-winning read: the reason, plus generic advice for the winner
+/// (`advice`) and the defender (`defense`).
 struct Winning: Decodable {
     let reason: String
     let advice: [String]
+    let defense: [String]
 }
 
 /// One labeled bar. `mid` (0.5) draws a contested midline for a centered,
