@@ -142,8 +142,9 @@ struct MarginColumnView: View {
         }
     }
 
-    /// In book: the opening names itself, the AUTHORED annotation leads,
-    /// and the doors show where each named continuation goes.
+    /// In book: the opening names itself (masthead) and its theory prose
+    /// leads — Wikibooks (attributed) when we have it, else our authored
+    /// annotation. Paragraphs render as separate blocks.
     @ViewBuilder private func theoryCard(_ t: Theory) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if let name = content.masthead {
@@ -154,28 +155,16 @@ struct MarginColumnView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let idea = t.idea {
-                Text(idea)
-                    .font(Theme.Typography.cardBody)
-                    .foregroundStyle(Theme.Palette.ink82)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !t.doors.isEmpty {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text("CONTINUATIONS")
-                        .font(Theme.Typography.cardHeading)
-                        .tracking(Theme.Tracking.label)
-                        .foregroundStyle(Theme.Palette.ink45)
-                    ForEach(t.doors) { d in
-                        HStack(alignment: .firstTextBaseline,
-                               spacing: Theme.Spacing.xs) {
-                            Text(d.san)
-                                .font(Theme.Typography.cardMove)
-                                .foregroundStyle(Theme.Palette.ink)
-                            Text(d.variation)
-                                .font(Theme.Typography.cardBody)
-                                .foregroundStyle(Theme.Palette.ink55)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                // Render each paragraph (server splits them with a blank line)
+                // as its own block so the theory reads as prose, not one wall.
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    ForEach(Array(idea.components(separatedBy: "\n\n")
+                                    .enumerated()), id: \.offset) { _, para in
+                        Text(para)
+                            .font(Theme.Typography.cardBody)
+                            .foregroundStyle(Theme.Palette.ink82)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
