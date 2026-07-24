@@ -40,11 +40,9 @@ struct MarginColumnView: View {
                             SideReportView(title: "Black", side: sheet.sides.black)
                         } else if content.plansPending {
                             readingPlaceholder
-                        } else {
-                            Text("No read for this position.")
-                                .font(Theme.Typography.restingProse)
-                                .foregroundStyle(Theme.Palette.ink45)
                         }
+                        // no empty-state text: a theory-only or bare column
+                        // just shows what it has, nothing more.
                         if content.raw != nil { jsonSection }
                     }
                     .padding(.top, Theme.Spacing.md)
