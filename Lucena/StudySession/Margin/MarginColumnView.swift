@@ -36,11 +36,22 @@ struct MarginColumnView: View {
                         if let t = content.theory { theoryCard(t) }
                         if let sheet = content.sheet {
                             if let winning = sheet.winning {
-                                // outright winning -> only the reason, nothing else
-                                Text(winning)
-                                    .font(Theme.Typography.restingProse)
-                                    .foregroundStyle(Theme.Palette.ink)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                // outright winning -> only the reason + advice
+                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                    Text(winning.reason)
+                                        .font(Theme.Typography.restingProse)
+                                        .foregroundStyle(Theme.Palette.ink)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    ForEach(Array(winning.advice.enumerated()), id: \.offset) { _, tip in
+                                        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+                                            Text("\u{2022}").foregroundStyle(Theme.Palette.ink45)
+                                            Text(tip)
+                                                .font(Theme.Typography.cardBody)
+                                                .foregroundStyle(Theme.Palette.ink82)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                }
                             } else {
                                 badges(sheet.assessment)
                                 statBars
