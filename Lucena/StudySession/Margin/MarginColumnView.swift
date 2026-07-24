@@ -395,6 +395,11 @@ private struct SideReportView: View {
 private struct StatBar: View {
     let label: String
     let value: Double
+    /// When set (0.5), this is a CENTERED White-minus-Black bar: the fill
+    /// runs from the midline OUT toward whoever leads, so a gain for either
+    /// side GROWS the bar toward that side (a left fill would instead SHRINK
+    /// when Black improves — which read as "activity went down" after ...Nf6).
+    /// Absent -> an absolute 0-1 bar (king safety), filled from the left.
     var mid: Double? = nil
 
     var body: some View {
@@ -403,24 +408,37 @@ private struct StatBar: View {
                 .foregroundStyle(Theme.Palette.ink70)
                 .frame(width: 76, alignment: .leading)
             GeometryReader { geo in
+                let w = geo.size.width
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Theme.Palette.paperDeep)
-                    Rectangle().fill(Theme.Palette.ink70)
-                        .frame(width: geo.size.width * value)
                     if let mid {
-                        Rectangle().fill(Theme.Palette.ink45)
-                            .frame(width: 1)
-                            .offset(x: geo.size.width * mid)
+                        // center-out: a segment from mid to value
+                        let lo = min(mid, value), hi = max(mid, value)
+                        Rectangle().fill(Theme.Palette.ink70)
+                            .frame(width: w * (hi - lo))
+                            .offset(x: w * lo)
+                        Rectangle().fill(Theme.Palette.ink45)      // the midline
+                            .frame(width: 1).offset(x: w * mid)
+                    } else {
+                        Rectangle().fill(Theme.Palette.ink70)
+                            .frame(width: w * value)               // absolute, left fill
                     }
                 }
             }
             .frame(height: 7)
             .overlay(Rectangle().stroke(Theme.Palette.ink22, lineWidth: 1))
-            Text(String(format: "%.2f", value))
+            // trailing: which side leads (centered) or the raw 0-1 (absolute)
+            Text(trailing)
                 .font(Theme.Typography.cardMove)
                 .foregroundStyle(Theme.Palette.ink55)
                 .frame(width: 34, alignment: .trailing)
         }
+    }
+
+    private var trailing: String {
+        guard let mid else { return String(format: "%.2f", value) }
+        if abs(value - mid) < 0.02 { return "=" }
+        return value > mid ? "W" : "B"
     }
 }
 
