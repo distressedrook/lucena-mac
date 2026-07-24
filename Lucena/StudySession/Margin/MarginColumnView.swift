@@ -409,19 +409,25 @@ private struct StatBar: View {
                 .frame(width: 76, alignment: .leading)
             GeometryReader { geo in
                 let w = geo.size.width
-                ZStack(alignment: .leading) {
-                    Rectangle().fill(Theme.Palette.paperDeep)
-                    if let mid {
-                        // center-out: a segment from mid to value
-                        let lo = min(mid, value), hi = max(mid, value)
+                if mid != nil {
+                    // A chess EVAL BAR: White fills from the left, Black takes
+                    // the rest, the boundary IS the advantage (owner: "make it
+                    // look like the eval bar — you know white and black"). A
+                    // gain for either side grows THAT side's colour; the
+                    // midline marks dead even.
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(Theme.Palette.ink)              // Black
+                        Rectangle().fill(Theme.Palette.chipWhite)        // White
+                            .frame(width: w * value)
+                        Rectangle().fill(Theme.Palette.ink45)            // even mark
+                            .frame(width: 1).offset(x: w * (mid ?? 0.5))
+                    }
+                } else {
+                    // absolute 0-1 (king safety): a single ink fill on paper.
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(Theme.Palette.paperDeep)
                         Rectangle().fill(Theme.Palette.ink70)
-                            .frame(width: w * (hi - lo))
-                            .offset(x: w * lo)
-                        Rectangle().fill(Theme.Palette.ink45)      // the midline
-                            .frame(width: 1).offset(x: w * mid)
-                    } else {
-                        Rectangle().fill(Theme.Palette.ink70)
-                            .frame(width: w * value)               // absolute, left fill
+                            .frame(width: w * value)
                     }
                 }
             }
