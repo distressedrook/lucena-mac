@@ -36,6 +36,7 @@ struct MarginColumnView: View {
                         if let t = content.theory { theoryCard(t) }
                         if let sheet = content.sheet {
                             badges(sheet.assessment)
+                            statBars
                             SideReportView(title: "White", side: sheet.sides.white)
                             SideReportView(title: "Black", side: sheet.sides.black)
                         } else if content.plansPending {
@@ -76,6 +77,17 @@ struct MarginColumnView: View {
         let items = content.sheet?.badges ?? []
         if !items.isEmpty {
             FlowBadges(items: items)
+        }
+    }
+
+    /// The labeled 0-1 bars (Eval/Activity/Space centered, king safety
+    /// absolute). Comparable quantities only — see the server's _bars_block.
+    @ViewBuilder private var statBars: some View {
+        let bars = content.sheet?.bars ?? []
+        if !bars.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                ForEach(bars) { StatBar(label: $0.label, value: $0.value, mid: $0.mid) }
+            }
         }
     }
 

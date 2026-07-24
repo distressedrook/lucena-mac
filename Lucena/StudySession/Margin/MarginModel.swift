@@ -88,12 +88,24 @@ struct Sheet: Decodable {
     let assessment: Assessment
     let sides: Sides
     let activity: ActivityRead?
-    /// Server-computed VERDICT chips — "White more active", "White controls
-    /// the centre", "Black's dark squares are weak". Replaces every 0-1 bar
-    /// and percentile the margin used to draw (owner 2026-07-24). The raw
-    /// numbers stay in the JSON as data; these are what gets shown, and a
-    /// near-tie simply produces no badge.
+    /// Server-computed VERDICT chips — the categorical flags (weak colour
+    /// complex) and the decisive verdict ("White is winning"). The magnitude
+    /// metrics moved to `bars`.
     let badges: [String]?
+    /// Labeled 0-1 bars driven by COMPARABLE quantities (owner 2026-07-24:
+    /// "bars instead of labels"): Eval/Activity/Space centered at `mid` 0.5
+    /// (White edge past the midline), king safety absolute (0=safe..1=lost,
+    /// no mid). No control bar.
+    let bars: [Bar]?
+}
+
+/// One labeled bar. `mid` (0.5) draws a contested midline for a centered,
+/// White-minus-Black metric; absent for an absolute 0-1 metric.
+struct Bar: Decodable, Identifiable {
+    var id: String { label }
+    let label: String
+    let value: Double
+    let mid: Double?
 }
 
 /// Whose pieces are the more active — a VERDICT, not a number (owner
