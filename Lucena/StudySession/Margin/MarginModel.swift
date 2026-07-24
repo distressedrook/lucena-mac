@@ -97,6 +97,10 @@ struct Sheet: Decodable {
     /// (White edge past the midline), king safety absolute (0=safe..1=lost,
     /// no mid). No control bar.
     let bars: [Bar]?
+    /// Set when a side is OUTRIGHT WINNING: one sentence saying WHY. When
+    /// present the column shows ONLY this — no bars, no side reports, no
+    /// badges (owner 2026-07-24: "don't show anything, just say why").
+    let winning: String?
 }
 
 /// One labeled bar. `mid` (0.5) draws a contested midline for a centered,

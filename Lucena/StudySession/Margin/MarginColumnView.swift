@@ -35,10 +35,18 @@ struct MarginColumnView: View {
                         if let e = content.epigraph { epigraph(e) }
                         if let t = content.theory { theoryCard(t) }
                         if let sheet = content.sheet {
-                            badges(sheet.assessment)
-                            statBars
-                            SideReportView(title: "White", side: sheet.sides.white)
-                            SideReportView(title: "Black", side: sheet.sides.black)
+                            if let winning = sheet.winning {
+                                // outright winning -> only the reason, nothing else
+                                Text(winning)
+                                    .font(Theme.Typography.restingProse)
+                                    .foregroundStyle(Theme.Palette.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                badges(sheet.assessment)
+                                statBars
+                                SideReportView(title: "White", side: sheet.sides.white)
+                                SideReportView(title: "Black", side: sheet.sides.black)
+                            }
                         } else if content.plansPending {
                             readingPlaceholder
                         }
