@@ -361,7 +361,15 @@ private struct SideReportView: View {
             planList("Structure suggests this", tier(.structure))
             bulletList("Weaknesses", side.weaknesses)
             breaks
-            chips("Trapped", side.trapped.map { "\($0.piece)\($0.square)" })
+            // The two states are different claims and get different labels
+            // (owner 2026-07-25): "trapped" is no safe square at all,
+            // "restricted" is exactly one. Printing a restricted piece under
+            // a TRAPPED heading overstates it — Rf8 with Re8 available is not
+            // trapped.
+            chips("Trapped", side.trapped.filter { $0.state == "trapped" }
+                                         .map { "\($0.piece)\($0.square)" })
+            chips("Restricted", side.trapped.filter { $0.state == "restricted" }
+                                            .map { "\($0.piece)\($0.square)" })
             chips("Outposts", side.outposts.map { $0.square })
         }
         .frame(maxWidth: .infinity, alignment: .leading)
