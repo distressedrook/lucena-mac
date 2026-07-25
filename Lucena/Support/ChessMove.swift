@@ -1,10 +1,15 @@
 import Foundation
 
 /// A minimal FEN move applier for **local display feedback** only. It handles normal moves,
-/// captures, castling, en passant, and auto-queen promotion, and flips the side to move. Castling
-/// rights / ep target / clocks are approximated — the app is not a rules engine; the coach (with
-/// the real board core) re-derives the authoritative position. This just makes the piece visibly
-/// move when you drop it.
+/// captures, castling, en passant, and auto-queen promotion, and flips the side to move. The app is
+/// not a rules engine; the coach (with the real board core) re-derives the authoritative position.
+///
+/// Every FEN field is nonetheless produced FAITHFULLY — castling rights, en-passant target (emitted
+/// on every double push, `lucena_core.board.Board.apply`'s `en_passant="fen"` contract), halfmove
+/// clock, fullmove number. The optimistic FEN this returns is compared against the server's echo
+/// (`displayedFen`), and it is the key for the opening-book/theory lookup: an approximated field
+/// makes an in-book position miss theory and churns the loading highlights. Parity with the server
+/// is pinned by Tests/ChessMoveApplyTests.swift.
 enum ChessMove {
     /// Returns the display FEN after the move and the UCI string, or nil if the source square is
     /// empty / off-board.
@@ -30,9 +35,15 @@ enum ChessMove {
         let white = piece.isUppercase
         var uci = from + to
 
+        // Read the capture BEFORE mutating: a normal capture (destination
+        // occupied) or an en-passant capture (a pawn stepping diagonally onto
+        // an empty square). Both reset the halfmove clock below.
+        let isEnPassant = isPawn && ff != tf && grid[tr][tf] == nil
+        let isCapture = grid[tr][tf] != nil || isEnPassant
+
         // en passant: a pawn moving diagonally onto an empty square captures the pawn sitting on
         // the destination file, source rank.
-        if isPawn, ff != tf, grid[tr][tf] == nil {
+        if isEnPassant {
             grid[fr][tf] = nil
         }
         grid[fr][ff] = nil
@@ -49,11 +60,47 @@ enum ChessMove {
             if tf == 2 { grid[fr][3] = grid[fr][0]; grid[fr][0] = nil }   // O-O-O
         }
 
+        // Castling RIGHTS must be maintained, not blanked — an in-book position
+        // is keyed on the full FEN (placement+side+CASTLING+ep), so dropping
+        // rights to "-" makes every opening miss the theory lookup and be read
+        // as out-of-book (owner 2026-07-25: opening pawns lit up mid-theory).
+        var rights = Set(parts.count > 2 ? parts[2] : "-"); rights.remove("-")
+        func drop(_ cs: String) { cs.forEach { rights.remove($0) } }
+        if piece == "K" { drop("KQ") }
+        if piece == "k" { drop("kq") }
+        // a rook leaving — or an enemy capturing a rook ON — a home corner
+        // ends that side's right (an already-vacated corner is a no-op drop).
+        for (f, r, right) in [(7, 0, "K"), (0, 0, "Q"), (7, 7, "k"), (0, 7, "q")] {
+            if (piece == "R" || piece == "r"), ff == f, fr == r { drop(right) }
+            if tf == f, tr == r { drop(right) }
+        }
+        let castle = ["K", "Q", "k", "q"].filter { rights.contains(Character($0)) }.joined()
+
+        // en passant: a pawn's two-square push exposes the skipped square as the
+        // ep target, emitted on EVERY double push whether or not a capture is
+        // actually available. That is the server's contract — lucena_core's
+        // Board.apply returns `fen(en_passant="fen")` (the cozy-chess
+        // convention it preserves) — and our optimistic FEN is compared against
+        // that echo, so 1.e4 must read `... b KQkq e3 0 1` here too or
+        // `displayedFen` churns and the loading highlights drop.
+        var ep = "-"
+        if isPawn, abs(tr - fr) == 2 {
+            ep = String(UnicodeScalar(UInt8(97 + tf))) + String((fr + tr) / 2 + 1)
+        }
+
+        // Halfmove clock: reset on a pawn move or any capture, else increment.
+        // It MUST match the server's python-chess value — a stale hardcoded 0
+        // was the "works a couple of turns then stops" churn (a quiet move made
+        // the server report 1 while we still said 0, so `displayedFen` flipped
+        // and the highlight gate `marginStages.first.fen == displayedFen` broke).
+        let prevHalf = (parts.count > 4 ? Int(parts[4]) : nil) ?? 0
+        let half = (isPawn || isCapture) ? 0 : prevHalf + 1
+
         let next = stm == "w" ? "b" : "w"
         // Carry the fullmove counter so variation move numbers are right (it ticks after Black moves).
         let full = (parts.count > 5 ? Int(parts[5]) : nil) ?? 1
         let nextFull = stm == "b" ? full + 1 : full
-        return ("\(serialize(grid)) \(next) - - 0 \(nextFull)", uci)
+        return ("\(serialize(grid)) \(next) \(castle.isEmpty ? "-" : castle) \(ep) \(half) \(nextFull)", uci)
     }
 
     /// Standard algebraic notation for a (legal) move: piece letter, disambiguation, capture,

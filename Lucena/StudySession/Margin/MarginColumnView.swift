@@ -141,42 +141,69 @@ struct MarginColumnView: View {
     // MARK: the loading state
 
     /// Rolling the position takes a few seconds (engine MultiPV + Maia).
-    /// No spinners on paper — the INTERACTIVE loading (owner 2026-07-25):
-    /// the label cycles through the pre-roll features in step with the
-    /// board's highlights (one clock, stream.marginCycleIdx), falling back
-    /// to the plain reading line before the first stage arrives.
-    private var loadingLine: String {
-        guard let stream, !stream.marginStages.isEmpty, !stream.marginRollDone
-        else { return "Reading the position\u{2026}" }
-        let st = stream.marginStages
-        let label = st[stream.marginCycleIdx % st.count].label ?? "the position"
-        return "Analyzing \u{2014} \(label)\u{2026}"
-    }
-
+    /// No spinners on paper — the loading state is a LIVE SCAN LOG (owner 2026-07-25: "while that is
+    /// streaming, the current loading doesn't cut it"): the actual features
+    /// the pre-roll detected, listed as they arrive, with a spotlight that
+    /// moves in lockstep with the board highlights (one clock,
+    /// stream.marginCycleIdx). Real content, not skeleton blocks — and it
+    /// ties the two halves together: the lit line names the lit squares.
     @ViewBuilder private var readingPlaceholder: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text(loadingLine)
-                .contentTransition(.opacity)
-                .animation(.easeInOut(duration: 0.3), value: loadingLine)
-                .font(Theme.Typography.restingProse)
-                .foregroundStyle(Theme.Palette.ink45)
+        let stages = stream?.marginStages ?? []
+        let idx = stages.isEmpty ? 0 : (stream?.marginCycleIdx ?? 0) % stages.count
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Reading the position\u{2026}")
+                .font(Theme.Typography.labelSmall)
+                .tracking(Theme.Tracking.label)
+                // INK, not a gray (owner 2026-07-25). The scan log is real
+                // content, not chrome — the breathing opacity below already
+                // says "in progress"; a washed-out ink45 said "disabled".
+                .foregroundStyle(Theme.Palette.ink)
                 .opacity(breathing ? 1.0 : 0.45)
                 .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true),
                            value: breathing)
                 .onAppear { breathing = true }
                 .onDisappear { breathing = false }
-            ForEach(0..<2, id: \.self) { _ in
+
+            if stages.isEmpty {
+                // before the first stage arrives — a single ruled hint of the
+                // list that is coming (rare; the pre-roll streams instantly).
+                ForEach(0..<3, id: \.self) { _ in
+                    Rectangle().fill(Theme.Palette.ink12)
+                        .frame(width: 120, height: 8)
+                }
+            } else {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Rectangle().fill(Theme.Palette.ink12)
-                        .frame(width: 84, height: 9)
-                    Rectangle().fill(Theme.Palette.ink12)
-                        .frame(maxWidth: .infinity).frame(height: 7)
-                    Rectangle().fill(Theme.Palette.ink12)
-                        .frame(maxWidth: .infinity).frame(height: 7)
-                        .padding(.trailing, Theme.Spacing.xxl)
+                    ForEach(Array(stages.enumerated()), id: \.offset) { i, s in
+                        scanRow(s, current: i == idx)
+                    }
                 }
             }
         }
+    }
+
+    /// One feature line in the scan log — a marker (lit gold on the current
+    /// one, matching the board's spotlight), the term, and its square count.
+    /// Every term is set in INK (owner 2026-07-25: "why is the text color
+    /// gray? make it ink") — the spotlight is carried by the GOLD MARKER and
+    /// the dot's size, not by dimming the other lines, which read as
+    /// unavailable rather than not-current.
+    @ViewBuilder private func scanRow(_ s: MarginProgress, current: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+            Circle()
+                .fill(current ? Theme.Palette.gold : Theme.Palette.ink22)
+                .frame(width: current ? 6 : 4, height: current ? 6 : 4)
+                .frame(width: 8, alignment: .center)
+            Text(s.label ?? "")
+                .font(Theme.Typography.cardBody)
+                .foregroundStyle(Theme.Palette.ink)
+            if let n = s.squares?.count, n > 0 {
+                Text("\u{00B7} \(n)")
+                    .font(Theme.Typography.labelSmall)
+                    .foregroundStyle(Theme.Palette.ink45)
+            }
+            Spacer(minLength: 0)
+        }
+        .animation(.easeInOut(duration: 0.3), value: current)
     }
 
     // MARK: authored content — the epigraph and the theory card
