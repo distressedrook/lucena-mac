@@ -16,7 +16,14 @@ final class StateStream {
     private(set) var turn: TurnState?
     private(set) var drill: PuzzleDoc?      // an active forcing-win tree for the app to walk
     private(set) var history: [Ply] = []    // the move line (ply 0 = start), for the navigator
-    private(set) var engineLines: EngineLines?   // live analysis for the current position (transient)
+    private(set) var engineLines: EngineLines?   // live analysis for the LATEST position (transient)
+    /// Every line-up this session has seen, by position (owner 2026-07-26: "can we also have
+    /// front-end caching? while inside a session?"). Walking back through a game used to leave the
+    /// panel blank until the server re-answered; a position we already analysed is on screen
+    /// immediately, and the server's own answer replaces it when it lands. Session-scoped: cleared
+    /// with everything else on reset/switch, because it is memory of THIS conversation.
+    private var lineMemory = LineMemory()
+
     private(set) var coachStatus: String?        // "what the coach is doing" phase (transient, tool-grounded)
     private(set) var sessions: [SessionInfo] = []   // the rail's session list (live, pushed by the server)
     private(set) var currentSession: String?
@@ -35,6 +42,12 @@ final class StateStream {
     private var marginCycleTask: Task<Void, Never>?
     private(set) var connected = false
     private(set) var ready = false        // the full initial snapshot has arrived → safe to reveal the UI
+
+    /// The line-up for `fen` — the live one when it is this position, else what we saw earlier.
+    func lines(for fen: String) -> EngineLines? { lineMemory.lines(for: fen) }
+
+    /// Positions are compared WITHOUT the clocks (see LineMemory.key).
+    static func positionKey(_ fen: String) -> String { LineMemory.key(fen) }
 
     private var baseURL: URL
     private var task: Task<Void, Never>?
@@ -105,6 +118,7 @@ final class StateStream {
         drill = nil
         history = []
         engineLines = nil
+        lineMemory.forgetAll()                      // session-scoped memory
         coachStatus = nil
         sessions = []
         currentSession = nil
@@ -219,7 +233,10 @@ final class StateStream {
         guard let data = payload.data(using: .utf8) else { return }
         // Live analysis fires many times a second — animating it would thrash, so update it raw.
         if event == "engine_lines" {
-            if let v = try? decoder.decode(EngineLines.self, from: data) { engineLines = v }
+            if let v = try? decoder.decode(EngineLines.self, from: data) {
+                engineLines = v
+                lineMemory.remember(v)
+            }
             return
         }
         // Everything else is a discrete UI change (a new beat, a repaint, a status). Mutate inside an
@@ -239,6 +256,7 @@ final class StateStream {
             case "reset":    board = nil; beats = []; analysis = nil; drill = nil; turn = nil
                              clearMarginProgress()
                              history = []; engineLines = nil; coachStatus = nil; view = nil
+                             lineMemory.forgetAll()   // a new chat remembers nothing
                              version = 0; activityDepth = 1; activityKind = "conversation"; activeIdx = 0
                              mode = "freeform"; modeSuspended = false; modeLessonType = nil
             case "activity": if let a = try? decoder.decode(ActivityEvent.self, from: data) {

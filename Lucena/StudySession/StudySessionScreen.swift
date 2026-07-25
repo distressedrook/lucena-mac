@@ -258,8 +258,11 @@ struct StudySessionScreen: View {
     /// milliseconds and swings wildly, and `updateShownEval` holds the previous value while this is
     /// nil — so the bar eases once to the real number instead of lurching through the noise.
     private var liveEval: (cp: Int, winPct: Double)? {
+        // BY POSITION, not by exact fen: the session remembers every line-up it has seen, so
+        // stepping back onto an analysed position reads its eval immediately instead of waiting for
+        // the server to answer again — and the clocks must not make the same board look different.
         guard engineOn, analysisOn,
-              let el = stream?.engineLines, el.fen == displayedFen, el.settled,
+              let el = stream?.lines(for: displayedFen), el.settled,
               let top = el.lines.first else { return nil }
         return (top.evalWhiteCp, top.winPct)
     }
@@ -1601,7 +1604,7 @@ struct StudySessionScreen: View {
                 case .analysis:
                     // The game score: the mainline whole, with an open variation inlined under the
                     // move it replaces, every move clickable (owner 2026-07-26).
-                    AnalysisView(engineLines: stream?.engineLines, currentFen: displayedFen,
+                    AnalysisView(engineLines: stream?.lines(for: displayedFen), currentFen: displayedFen,
                                  analysisOn: $analysisOn, score: scoreLine,
                                  onSelect: selectScoreMove)
                 }

@@ -31,7 +31,13 @@ struct AnalysisView: View {
     /// The same lines WITHOUT the settling floor — the header's depth readout, which should tick
     /// from the first frame.
     private var searching: EngineLines? {
-        guard analysisOn, let el = engineLines, el.fen == currentFen else { return nil }
+        // The caller hands us the line-up FOR this position (the session's own memory of it), so
+        // the check here is a belt-and-braces one — and it compares POSITIONS, not raw fens: a
+        // remembered line-up carries the fen it was searched at, whose clocks may differ from the
+        // board's on a repetition.
+        guard analysisOn, let el = engineLines,
+              StateStream.positionKey(el.fen) == StateStream.positionKey(currentFen)
+        else { return nil }
         return el
     }
 
