@@ -229,7 +229,29 @@ struct StudySessionScreen: View {
         }
         shownEvalText = e.text
     }
-    private var highlights: [Highlight] { board?.highlights ?? [] }
+    private var highlights: [Highlight] {
+        // Interactive loading (owner 2026-07-25): while the margin's rolls
+        // grind, cycle through the pre-roll features — each stage lights its
+        // squares on the board. One clock (stream.marginCycleIdx) keeps this
+        // in step with the margin's "Analyzing ..." label.
+        if marginCycleActive, let st = currentMarginStage {
+            return (st.squares ?? []).map {
+                Highlight(square: $0, style: "analysis", factId: "preroll-\(st.stage ?? "")")
+            }
+        }
+        return board?.highlights ?? []
+    }
+
+    private var marginCycleActive: Bool {
+        guard let s = stream else { return false }
+        return !s.marginStages.isEmpty && !s.marginRollDone
+            && s.marginStages.first?.fen == displayedFen
+    }
+
+    private var currentMarginStage: MarginProgress? {
+        guard let s = stream, !s.marginStages.isEmpty else { return nil }
+        return s.marginStages[s.marginCycleIdx % s.marginStages.count]
+    }
     private var arrows: [Arrow] { board?.arrows ?? [] }
     private var beats: [Beat] { stream?.beats ?? [] }
 

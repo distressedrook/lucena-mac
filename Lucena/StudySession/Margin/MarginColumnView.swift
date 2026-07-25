@@ -8,6 +8,7 @@ struct MarginColumnView: View {
     let content: MarginContent
     var onCommand: (String) -> Void = { _ in }
 
+    @Environment(\.stateStream) private var stream   // the loading cycle's clock
     @State private var showJSON = false
     @State private var breathing = false
 
@@ -34,7 +35,12 @@ struct MarginColumnView: View {
                         // book opens with its epigraph, then names itself.
                         if let e = content.epigraph { epigraph(e) }
                         if let t = content.theory { theoryCard(t) }
-                        if let sheet = content.sheet {
+                        if content.plansPending {
+                            // Only after the rolls does the full screen appear
+                            // (owner 2026-07-25); until then the interactive
+                            // loading cycles through the pre-roll features.
+                            readingPlaceholder
+                        } else if let sheet = content.sheet {
                             if let winning = sheet.winning {
                                 // outright winning -> only the reason + advice
                                 // for the winner (converting) and the defender.
@@ -61,8 +67,6 @@ struct MarginColumnView: View {
                                 SideReportView(title: "White", side: sheet.sides.white)
                                 SideReportView(title: "Black", side: sheet.sides.black)
                             }
-                        } else if content.plansPending {
-                            readingPlaceholder
                         }
                         // no empty-state text: a theory-only or bare column
                         // just shows what it has, nothing more.
@@ -137,12 +141,23 @@ struct MarginColumnView: View {
     // MARK: the loading state
 
     /// Rolling the position takes a few seconds (engine MultiPV + Maia).
-    /// No spinners on paper — a breathing line of type and two ruled
-    /// placeholder blocks, so the column has the SHAPE of the answer that
-    /// is coming instead of collapsing to nothing.
+    /// No spinners on paper — the INTERACTIVE loading (owner 2026-07-25):
+    /// the label cycles through the pre-roll features in step with the
+    /// board's highlights (one clock, stream.marginCycleIdx), falling back
+    /// to the plain reading line before the first stage arrives.
+    private var loadingLine: String {
+        guard let stream, !stream.marginStages.isEmpty, !stream.marginRollDone
+        else { return "Reading the position\u{2026}" }
+        let st = stream.marginStages
+        let label = st[stream.marginCycleIdx % st.count].label ?? "the position"
+        return "Analyzing \u{2014} \(label)\u{2026}"
+    }
+
     @ViewBuilder private var readingPlaceholder: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text("Reading the position\u{2026}")
+            Text(loadingLine)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.3), value: loadingLine)
                 .font(Theme.Typography.restingProse)
                 .foregroundStyle(Theme.Palette.ink45)
                 .opacity(breathing ? 1.0 : 0.45)

@@ -173,6 +173,18 @@ struct Highlight: Codable, Equatable, Identifiable {
     var id: String { "\(square)-\(factId ?? "")" }
 }
 
+/// One pre-roll analysis stage for the interactive loading (server:
+/// margin_progress) — the label the margin shows and the squares the board
+/// highlights while this stage is on screen.
+struct MarginProgress: Codable, Equatable {
+    var fen: String?
+    var stage: String?
+    var label: String?
+    var squares: [String]?
+    var i: Int?
+    var n: Int?
+}
+
 struct EvalBlock: Codable, Equatable {
     var cp: Int?
     var winPct: Double?

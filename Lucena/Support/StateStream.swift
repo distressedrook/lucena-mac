@@ -29,6 +29,10 @@ final class StateStream {
     private(set) var mode = "freeform"             // conversation mode: "coach" while a drill is live
     private(set) var modeSuspended = false         // a what-if parked the drill (freeform, but it still governs)
     private(set) var modeLessonType: String?       // the governing lesson's type ("puzzle", …) → header title
+    private(set) var marginStages: [MarginProgress] = []  // pre-roll loading stream (transient)
+    private(set) var marginRollDone = false               // rolls finished -> present the sheet
+    private(set) var marginCycleIdx = 0                   // one clock for board + margin label
+    private var marginCycleTask: Task<Void, Never>?
     private(set) var connected = false
     private(set) var ready = false        // the full initial snapshot has arrived → safe to reveal the UI
 
@@ -93,6 +97,7 @@ final class StateStream {
         wsTask = nil
         connected = false
         ready = false
+        clearMarginProgress()
         board = nil
         beats = []
         analysis = nil
@@ -232,6 +237,7 @@ final class StateStream {
             switch event {
             case "ready":    ready = true
             case "reset":    board = nil; beats = []; analysis = nil; drill = nil; turn = nil
+                             clearMarginProgress()
                              history = []; engineLines = nil; coachStatus = nil; view = nil
                              version = 0; activityDepth = 1; activityKind = "conversation"; activeIdx = 0
                              mode = "freeform"; modeSuspended = false; modeLessonType = nil
@@ -245,6 +251,27 @@ final class StateStream {
                                  modeLessonType = m.lessonType
                              }
             case "status":   coachStatus = (try? decoder.decode(StatusEvent.self, from: data))?.text
+            case "margin_progress":
+                if let p = try? decoder.decode(MarginProgress.self, from: data) {
+                    // every accept/ignore decision (fen correlation, stale
+                    // done, fresh stream) lives in the PURE reducer — tested
+                    // dependency-free in Tests/MarginProgressReducerTests.
+                    var st = MarginProgressReducer.State(
+                        fens: marginStages.map(\.fen), rollDone: marginRollDone)
+                    let ev = MarginProgressReducer.Ev(fen: p.fen, stage: p.stage, i: p.i)
+                    switch MarginProgressReducer.reduce(&st, ev) {
+                    case .ignore: break
+                    case .begin:
+                        marginStages = [p]; marginRollDone = false; marginCycleIdx = 0
+                        startMarginCycle()
+                    case .append:
+                        marginStages.append(p)
+                        startMarginCycle()
+                    case .finish:
+                        marginRollDone = true
+                        marginCycleTask?.cancel(); marginCycleTask = nil
+                    }
+                }
             case "board":    if let v = try? decoder.decode(BoardState.self, from: data) { board = v }
             case "beats":    applyBeats(data)
             case "analysis": if let v = try? decoder.decode(PositionAnalysis.self, from: data) { analysis = v }
@@ -257,6 +284,31 @@ final class StateStream {
                                  sessions = v.sessions; currentSession = v.current
                              }
             default: break
+            }
+        }
+    }
+
+    /// Clear the loading-cycle state and stop its clock — from BOTH the
+    /// "reset" event and stop() (sign-out must never leave the previous
+    /// user's highlights cycling; Codex 2026-07-25).
+    private func clearMarginProgress() {
+        marginStages = []; marginRollDone = false; marginCycleIdx = 0
+        marginCycleTask?.cancel(); marginCycleTask = nil
+    }
+
+    /// One shared clock for the loading cycle: the board highlights and the
+    /// margin's "Analyzing …" label both read `marginCycleIdx`, so they can
+    /// never show different stages.
+    private func startMarginCycle() {
+        guard marginCycleTask == nil else { return }
+        marginCycleTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1.4))
+                // try? swallows CancellationError — re-check before mutating,
+                // or a cancelled clock lands one stray tick after stop()/reset
+                // and can briefly overlap a newly started clock (Codex High).
+                guard !Task.isCancelled, let self, !self.marginRollDone else { return }
+                withAnimation(.easeInOut(duration: 0.3)) { self.marginCycleIdx += 1 }
             }
         }
     }
