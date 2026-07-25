@@ -166,6 +166,51 @@ struct StudySessionScreen: View {
         isInVariation ? min(max(varCursor, 0), max(0, displayLine.count - 1)) : currentPlyIndex
     }
 
+    /// THE GAME SCORE for the Analysis panel: the mainline WHOLE, with an open variation inlined as
+    /// an aside right after the move it replaces (owner 2026-07-26, with a screenshot — "2. ♞f3 ♞c6"
+    /// still reads as the game, "2… ♞f6" sits under it). Deliberately NOT `displayLine`, which
+    /// truncates the mainline at the branch because the navigator strip shows ONE line at a time;
+    /// a score shows the game and its asides together. Each entry carries its own target, since
+    /// clicking a mainline move while a variation is open means "come back to the game".
+    private var scoreLine: [ScoreMove] {
+        let main = history.enumerated().map { i, p in
+            LineMove(id: "m\(i)", san: p.san, uci: p.uci, fen: p.fen,
+                     isBranch: false, node: nil, mainPly: i)
+        }
+        func mainEntry(_ i: Int, _ m: LineMove) -> ScoreMove {
+            ScoreMove(id: m.id, move: m, isVariation: false,
+                      isCurrent: !isInVariation && i == currentPlyIndex, target: .mainline(i))
+        }
+        let dl = displayLine
+        guard isInVariation, let branch = dl.firstIndex(where: { $0.isBranch }) else {
+            return main.enumerated().map(mainEntry)
+        }
+        // …mainline up to and INCLUDING the move the sideline replaces, then the sideline, then the
+        // rest of the game. `branch` indexes both lists identically: displayLine's prefix IS the
+        // mainline prefix, so the replaced ply sits at the same index in both.
+        var out = main.prefix(branch + 1).enumerated().map { mainEntry($0.offset, $0.element) }
+        out += dl[branch...].enumerated().map { j, m in
+            ScoreMove(id: m.id, move: m, isVariation: true,
+                      isCurrent: branch + j == lineCursor, target: .line(branch + j))
+        }
+        out += main.dropFirst(branch + 1).enumerated().map { mainEntry(branch + 1 + $0.offset, $0.element) }
+        return out
+    }
+
+    /// Click a move in the game score. A sideline move is a jump within the shown line; a MAINLINE
+    /// move while a variation is open means leaving that variation for the game — the score is the
+    /// one place both are on screen at once, so it is the one place that can be asked for either.
+    private func selectScoreMove(_ e: ScoreMove) {
+        switch e.target {
+        case .line(let i):
+            selectLineIndex(i)
+        case .mainline(let ply):
+            if isInVariation { variationCancel() }
+            viewIndex = (ply >= liveIndex && history.indices.contains(ply)
+                         && history[ply].fen == board?.fen) ? nil : ply
+        }
+    }
+
     /// Jump the board to a move in the shown line — the ONE navigation entry point, shared by the
     /// navigator strip and the Analysis panel's move list (2026-07-26: the panel now shows the same
     /// mainline-plus-variation line, so both must move the board the same way). Not wrapped in
@@ -1561,12 +1606,11 @@ struct StudySessionScreen: View {
                     }
                     }
                 case .analysis:
-                    // The SAME line the navigator shows — mainline plus whatever variation is
-                    // open — and the same jump handler, so the panel is a full second navigator
-                    // rather than a mainline-only score (owner 2026-07-26).
+                    // The game score: the mainline whole, with an open variation inlined under the
+                    // move it replaces, every move clickable (owner 2026-07-26).
                     AnalysisView(engineLines: stream?.engineLines, currentFen: displayedFen,
-                                 analysisOn: $analysisOn, line: navigatorLine,
-                                 cursor: lineCursor, onSelect: selectLineIndex)
+                                 analysisOn: $analysisOn, score: scoreLine,
+                                 onSelect: selectScoreMove)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
