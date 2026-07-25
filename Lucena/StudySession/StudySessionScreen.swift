@@ -1516,7 +1516,7 @@ struct StudySessionScreen: View {
                     if !(inActivity || drillGoverns) {
                         // v1: the margin IS the coach surface (owner wiring
                         // step a: the conversation view goes away).
-                        MarginLiveView(fen: displayedFen, sessionId: session, coach: coach, live: viewIndex == nil)
+                        MarginLiveView(fen: displayedFen, sessionId: session, coach: coach)
                     } else {
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         moveHead
