@@ -254,9 +254,12 @@ struct StudySessionScreen: View {
     // Gated on the SAME switches that run the analyzer (2026-07-26): with analysis off the engine is
     // stopped, so the last line it streamed is a leftover — on an unchanged position it would keep
     // winning over the board's reported eval and the switch would look ignored.
+    /// Also waits for the search to SETTLE (2026-07-26): depth 1-7 lands in a few hundred
+    /// milliseconds and swings wildly, and `updateShownEval` holds the previous value while this is
+    /// nil — so the bar eases once to the real number instead of lurching through the noise.
     private var liveEval: (cp: Int, winPct: Double)? {
         guard engineOn, analysisOn,
-              let el = stream?.engineLines, el.fen == displayedFen,
+              let el = stream?.engineLines, el.fen == displayedFen, el.settled,
               let top = el.lines.first else { return nil }
         return (top.evalWhiteCp, top.winPct)
     }

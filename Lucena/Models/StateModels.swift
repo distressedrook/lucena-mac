@@ -120,6 +120,14 @@ struct EngineLines: Decodable, Equatable {
         a.fen == b.fen && a.depth == b.depth && a.lines.map(\.pvSan) == b.lines.map(\.pvSan)
     }
 
+    /// The depth at which the line-up stops churning (owner 2026-07-26: "the analysis isn't smooth.
+    /// When I make a move, it jumps"). The analyzer restarts at depth 1 on every move and publishes
+    /// after EVERY depth, so the first frames re-rank the lines and swing the eval several times a
+    /// second. Readouts wait for this — it lands in a few hundred milliseconds — and show the
+    /// previous value or nothing until then, rather than flickering through nonsense.
+    static let settledDepth = 8
+    var settled: Bool { depth >= EngineLines.settledDepth }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         fen = try c.decodeIfPresent(String.self, forKey: .fen) ?? ""

@@ -17,25 +17,40 @@ struct AnalysisView: View {
     /// line you are reading, and the other three stay where they were.
     @State private var expandedRanks: Set<Int> = []
 
-    /// Engine lines only when they describe the position currently shown.
+    /// Engine lines only when they describe the position currently shown, and only once the search
+    /// has settled (owner 2026-07-26: "the analysis isn't smooth. When I make a move, it jumps").
+    /// The analyzer restarts at depth 1 on every move and publishes after EVERY depth, so the first
+    /// frames reorder the lines several times a second — that is the jump. Below
+    /// `AnalysisStyle.minDepth` the rows stay blank (a few hundred ms) rather than thrash; the
+    /// header's depth readout climbs throughout, so the panel visibly works the whole time.
     private var lines: EngineLines? {
+        guard let el = searching else { return nil }
+        return el.settled ? el : nil
+    }
+
+    /// The same lines WITHOUT the settling floor — the header's depth readout, which should tick
+    /// from the first frame.
+    private var searching: EngineLines? {
         guard analysisOn, let el = engineLines, el.fen == currentFen else { return nil }
         return el
     }
 
+    private func line(rank: Int) -> EngineLine? { lines?.lines.first { $0.rank == rank } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             engineHeader
-            if let el = lines {
-                // FOUR lines (owner 2026-07-26). The server searches MultiPV=4; the prefix is the
-                // app's own guard so a differently-configured server can never stretch the panel.
-                ForEach(el.lines.prefix(AnalysisStyle.maxLines)) { l in
-                    engineRow(l, fen: el.fen)
-                }
-                if let opening = el.opening, !opening.isEmpty { openingRow(opening) }
-            } else if let opening = engineLines?.opening, !opening.isEmpty {
-                openingRow(opening)
+            // FOUR rows, ALWAYS — reserved whether or not a line has arrived yet. The block used to
+            // empty the instant the board moved and refill a moment later, so the game score below
+            // it slid up and back down on every ply; that is the jump. Keyed by RANK, so a new
+            // depth swaps each row's TEXT in place instead of inserting and removing rows under
+            // SwiftUI's identity.
+            ForEach(1...AnalysisStyle.maxLines, id: \.self) { rank in
+                engineRow(line(rank: rank), fen: currentFen)
             }
+            // Its height is reserved for the same reason. Only ever the CURRENT position's opening:
+            // falling back to the previous one printed the wrong name for a beat after every move.
+            openingRow(lines?.opening)
             MoveListView(score: score, onSelect: onSelect)
         }
     }
@@ -50,10 +65,11 @@ struct AnalysisView: View {
                 .font(Theme.Typography.label)
                 .foregroundStyle(Theme.Palette.ink)
             Spacer()
-            if let el = lines {
+            if let el = searching {
                 Text(verbatim: "depth \(el.depth) · \(el.engine)")
                     .font(Theme.Typography.labelSmall)
                     .foregroundStyle(Theme.Palette.ink45)
+                    .contentTransition(.numericText())     // the depth ticks; it doesn't restack
             }
             Image(systemName: Theme.Symbol.gear)
                 .imageScale(.small)
@@ -66,44 +82,49 @@ struct AnalysisView: View {
 
     // MARK: engine line
 
-    private func engineRow(_ line: EngineLine, fen: String) -> some View {
-        let open = expandedRanks.contains(line.rank)
+    /// One line's row. `line` is nil while the search is still settling (or the position has no
+    /// such line) — the row draws anyway, so the block's height never changes.
+    private func engineRow(_ line: EngineLine?, fen: String) -> some View {
+        let rank = line?.rank
+        let open = rank.map { expandedRanks.contains($0) } ?? false
         return HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-            Text(verbatim: AnalysisStyle.evalText(line.evalWhiteCp))
+            Text(verbatim: line.map { AnalysisStyle.evalText($0.evalWhiteCp) } ?? "·")
                 .font(Theme.Typography.evalReadout)
-                .foregroundStyle(Theme.Palette.ink)
+                .foregroundStyle(line == nil ? Theme.Palette.ink45 : Theme.Palette.ink)
                 .padding(.vertical, Theme.Spacing.xxs)
                 .padding(.horizontal, Theme.Spacing.xs)
                 .background(Theme.Palette.paperDeep)
                 .overlay(Rectangle().stroke(Theme.Palette.ink22, lineWidth: 1))
             // One line until this row's own caret opens it: a 12-ply PV wrapped by default
             // re-flowed the whole panel at every depth.
-            Text(verbatim: AnalysisStyle.numberedPV(fen: fen, sans: line.pvSan))
+            Text(verbatim: line.map { AnalysisStyle.numberedPV(fen: fen, sans: $0.pvSan) } ?? " ")
                 .font(Theme.Typography.move)
                 .foregroundStyle(Theme.Palette.ink)
                 .lineLimit(open ? nil : 1)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: open)
             Spacer(minLength: 0)
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    if open { expandedRanks.remove(line.rank) } else { expandedRanks.insert(line.rank) }
+            if let rank {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        if open { expandedRanks.remove(rank) } else { expandedRanks.insert(rank) }
+                    }
+                } label: {
+                    Image(systemName: Theme.Symbol.chevronDown)
+                        .imageScale(.small)
+                        .foregroundStyle(Theme.Palette.ink45)
+                        .rotationEffect(.degrees(open ? 180 : 0))
                 }
-            } label: {
-                Image(systemName: Theme.Symbol.chevronDown)
-                    .imageScale(.small)
-                    .foregroundStyle(Theme.Palette.ink45)
-                    .rotationEffect(.degrees(open ? 180 : 0))
+                .buttonStyle(.plain)
+                .accessibilityLabel(open ? "Shorten this line" : "Show the whole line")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(open ? "Shorten this line" : "Show the whole line")
         }
         .padding(.vertical, Theme.Spacing.xs)
         .padding(.horizontal, Theme.Spacing.md)
     }
 
-    private func openingRow(_ name: String) -> some View {
-        Text(verbatim: name)
+    private func openingRow(_ name: String?) -> some View {
+        Text(verbatim: name?.isEmpty == false ? name! : " ")
             .font(Theme.Typography.moveLg)
             .foregroundStyle(Theme.Palette.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
