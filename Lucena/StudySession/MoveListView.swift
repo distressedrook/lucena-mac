@@ -58,7 +58,8 @@ struct MoveListView: View {
 
     /// A VARIATION row: indented under the move it branches from, behind a vertical rule, with the
     /// move number carried INLINE ("2… ♞f6") instead of in the gutter — the sideline is an aside on
-    /// the game, so it must not line up with the game's own columns.
+    /// the game, so it must not line up with the game's own columns. A subline indents again per
+    /// level, so the tree's shape is legible at a glance.
     private func variationRow(_ row: MoveRow) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Rectangle()
@@ -77,7 +78,8 @@ struct MoveListView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, Theme.Spacing.xxs)
-        .padding(.leading, Theme.Size.moveNumberColumn + Theme.Spacing.md)
+        .padding(.leading, Theme.Size.moveNumberColumn + Theme.Spacing.md
+                 + CGFloat(row.depth - 1) * Theme.Spacing.md)
         .padding(.trailing, Theme.Spacing.md)
     }
 

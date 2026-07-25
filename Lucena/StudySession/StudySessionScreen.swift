@@ -166,48 +166,38 @@ struct StudySessionScreen: View {
         isInVariation ? min(max(varCursor, 0), max(0, displayLine.count - 1)) : currentPlyIndex
     }
 
-    /// THE GAME SCORE for the Analysis panel: the mainline WHOLE, with an open variation inlined as
-    /// an aside right after the move it replaces (owner 2026-07-26, with a screenshot — "2. ♞f3 ♞c6"
-    /// still reads as the game, "2… ♞f6" sits under it). Deliberately NOT `displayLine`, which
-    /// truncates the mainline at the branch because the navigator strip shows ONE line at a time;
-    /// a score shows the game and its asides together. Each entry carries its own target, since
-    /// clicking a mainline move while a variation is open means "come back to the game".
+    /// THE GAME SCORE for the Analysis panel: the mainline WHOLE, with EVERY recorded variation
+    /// shown as an indented aside beneath the move it replaces — always, not only while you are
+    /// inside one (owner 2026-07-26: "the analysis should always have the tree! Only when I enter
+    /// the variation it shows. No."). The navigator strip shows ONE line at a time by design; the
+    /// score is where the whole tree lives, so a "what if" you played ten moves ago is still on the
+    /// page, and clicking it walks straight back into that line.
+    ///
+    /// The walk itself is pure and lives in GameScore.swift, where it is tested.
     private var scoreLine: [ScoreMove] {
-        let main = history.enumerated().map { i, p in
-            LineMove(id: "m\(i)", san: p.san, uci: p.uci, fen: p.fen,
-                     isBranch: false, node: nil, mainPly: i)
-        }
-        func mainEntry(_ i: Int, _ m: LineMove) -> ScoreMove {
-            ScoreMove(id: m.id, move: m, isVariation: false,
-                      isCurrent: !isInVariation && i == currentPlyIndex, target: .mainline(i))
-        }
-        let dl = displayLine
-        guard isInVariation, let branch = dl.firstIndex(where: { $0.isBranch }) else {
-            return main.enumerated().map(mainEntry)
-        }
-        // …mainline up to and INCLUDING the move the sideline replaces, then the sideline, then the
-        // rest of the game. `branch` indexes both lists identically: displayLine's prefix IS the
-        // mainline prefix, so the replaced ply sits at the same index in both.
-        var out = main.prefix(branch + 1).enumerated().map { mainEntry($0.offset, $0.element) }
-        out += dl[branch...].enumerated().map { j, m in
-            ScoreMove(id: m.id, move: m, isVariation: true,
-                      isCurrent: branch + j == lineCursor, target: .line(branch + j))
-        }
-        out += main.dropFirst(branch + 1).enumerated().map { mainEntry(branch + 1 + $0.offset, $0.element) }
-        return out
+        MoveListStyle.score(
+            mainline: history.enumerated().map { i, p in
+                LineMove(id: "m\(i)", san: p.san, uci: p.uci, fen: p.fen,
+                         isBranch: false, node: nil, mainPly: i)
+            },
+            variations: variations, shown: displayLine, cursor: lineCursor,
+            inVariation: isInVariation, currentPly: currentPlyIndex)
     }
 
-    /// Click a move in the game score. A sideline move is a jump within the shown line; a MAINLINE
-    /// move while a variation is open means leaving that variation for the game — the score is the
-    /// one place both are on screen at once, so it is the one place that can be asked for either.
+    /// Click a move in the game score. A mainline move returns to the game; a sideline move OPENS
+    /// its line — stack and all, so a subline two levels deep is one click away rather than a walk
+    /// back through carets.
     private func selectScoreMove(_ e: ScoreMove) {
         switch e.target {
-        case .line(let i):
-            selectLineIndex(i)
         case .mainline(let ply):
             if isInVariation { variationCancel() }
             viewIndex = (ply >= liveIndex && history.indices.contains(ply)
                          && history[ply].fen == board?.fen) ? nil : ply
+        case .variation(let stack, let cursor):
+            openCaret = nil
+            collapseTo = nil
+            varStack = stack
+            varCursor = cursor
         }
     }
 

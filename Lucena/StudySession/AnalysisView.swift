@@ -11,10 +11,11 @@ struct AnalysisView: View {
     let score: [ScoreMove]              // the game score — mainline whole, variations as asides
     let onSelect: (ScoreMove) -> Void
 
-    /// Collapsed by default: the best line only, on ONE row (owner 2026-07-26). The chevron opens
-    /// the other three. A four-line block permanently above the game score pushed the moves off the
-    /// panel; the top line is what you read at a glance, the rest is on request.
-    @State private var linesExpanded = false
+    /// ALL FOUR lines are always listed (owner 2026-07-26). What the chevron controls is the LENGTH
+    /// of one line: a PV runs 12 plies and does not fit a panel column, so each row shows a single
+    /// truncated line until its OWN caret opens it. Per PV, never a global collapse — you expand the
+    /// line you are reading, and the other three stay where they were.
+    @State private var expandedRanks: Set<Int> = []
 
     /// Engine lines only when they describe the position currently shown.
     private var lines: EngineLines? {
@@ -28,10 +29,8 @@ struct AnalysisView: View {
             if let el = lines {
                 // FOUR lines (owner 2026-07-26). The server searches MultiPV=4; the prefix is the
                 // app's own guard so a differently-configured server can never stretch the panel.
-                let shown = Array(el.lines.prefix(AnalysisStyle.maxLines))
-                ForEach(Array((linesExpanded ? shown : Array(shown.prefix(1))).enumerated()),
-                        id: \.element.id) { i, l in
-                    engineRow(l, fen: el.fen, chevron: i == 0 && shown.count > 1)
+                ForEach(el.lines.prefix(AnalysisStyle.maxLines)) { l in
+                    engineRow(l, fen: el.fen)
                 }
                 if let opening = el.opening, !opening.isEmpty { openingRow(opening) }
             } else if let opening = engineLines?.opening, !opening.isEmpty {
@@ -67,8 +66,9 @@ struct AnalysisView: View {
 
     // MARK: engine line
 
-    private func engineRow(_ line: EngineLine, fen: String, chevron: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+    private func engineRow(_ line: EngineLine, fen: String) -> some View {
+        let open = expandedRanks.contains(line.rank)
+        return HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
             Text(verbatim: AnalysisStyle.evalText(line.evalWhiteCp))
                 .font(Theme.Typography.evalReadout)
                 .foregroundStyle(Theme.Palette.ink)
@@ -76,24 +76,27 @@ struct AnalysisView: View {
                 .padding(.horizontal, Theme.Spacing.xs)
                 .background(Theme.Palette.paperDeep)
                 .overlay(Rectangle().stroke(Theme.Palette.ink22, lineWidth: 1))
-            // ONE line, truncated with an ellipsis — a PV is as long as the engine feels like and
-            // wrapping it re-flowed the whole panel every depth (owner 2026-07-26).
+            // One line until this row's own caret opens it: a 12-ply PV wrapped by default
+            // re-flowed the whole panel at every depth.
             Text(verbatim: AnalysisStyle.numberedPV(fen: fen, sans: line.pvSan))
                 .font(Theme.Typography.move)
                 .foregroundStyle(Theme.Palette.ink)
-                .lineLimit(1)
+                .lineLimit(open ? nil : 1)
                 .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: open)
             Spacer(minLength: 0)
-            if chevron {
-                Button { withAnimation(.easeInOut(duration: 0.15)) { linesExpanded.toggle() } } label: {
-                    Image(systemName: Theme.Symbol.chevronDown)
-                        .imageScale(.small)
-                        .foregroundStyle(Theme.Palette.ink45)
-                        .rotationEffect(.degrees(linesExpanded ? 180 : 0))
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    if open { expandedRanks.remove(line.rank) } else { expandedRanks.insert(line.rank) }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(linesExpanded ? "Fewer lines" : "More lines")
+            } label: {
+                Image(systemName: Theme.Symbol.chevronDown)
+                    .imageScale(.small)
+                    .foregroundStyle(Theme.Palette.ink45)
+                    .rotationEffect(.degrees(open ? 180 : 0))
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(open ? "Shorten this line" : "Show the whole line")
         }
         .padding(.vertical, Theme.Spacing.xs)
         .padding(.horizontal, Theme.Spacing.md)
