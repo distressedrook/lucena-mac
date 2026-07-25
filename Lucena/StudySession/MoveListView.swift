@@ -1,23 +1,28 @@
 import SwiftUI
 
-/// The game score — PGN-style numbered rows in figurine notation. The current/viewed ply is
-/// highlighted; tap a move to jump to that position. Pure render of `plies` (ply 0 = start).
+/// The game score — PGN-style numbered rows in figurine notation. The current/viewed move is
+/// highlighted; tap a move to jump to that position.
+///
+/// Renders the SHOWN LINE (`[LineMove]`), not the mainline ply list (2026-07-26, owner: "the
+/// analysis section isn't supporting variations"). That is the same unified mainline-plus-variation
+/// line the navigator strip draws, so stepping into a "what if" is visible here and clickable here;
+/// indices are indices into that line, which is what the screen's one jump handler takes.
 struct MoveListView: View {
-    let plies: [Ply]
-    let currentIndex: Int              // the ply being viewed (highlighted)
-    let onSelect: (Int) -> Void        // jump to a ply index
+    let line: [LineMove]
+    let cursor: Int                    // the move being viewed (highlighted)
+    let onSelect: (Int) -> Void        // jump to a move, by index into `line`
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    ForEach(MoveListStyle.rows(plies), id: \.number) { row in
+                    ForEach(MoveListStyle.rows(line)) { row in
                         moveRow(row)
                     }
                 }
             }
-            .onChange(of: currentIndex) { _, i in
+            .onChange(of: cursor) { _, i in
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(i, anchor: .center) }
             }
         }
@@ -37,6 +42,12 @@ struct MoveListView: View {
 
     private func moveRow(_ row: MoveRow) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
+            // A variation's first move carries a gold rule, the same divergence mark the navigator
+            // strip draws — without it a sideline reads as if it were the game.
+            Rectangle()
+                .fill(row.isBranch ? Theme.Palette.gold : Color.clear)
+                .frame(width: 2)
+                .padding(.trailing, Theme.Spacing.xxs)
             Text(verbatim: "\(row.number).")
                 .font(Theme.Typography.move)
                 .foregroundStyle(Theme.Palette.ink45)
@@ -49,18 +60,19 @@ struct MoveListView: View {
         .padding(.horizontal, Theme.Spacing.md)
     }
 
-    @ViewBuilder private func cell(_ ply: Ply?) -> some View {
-        if let ply, let san = ply.san {
-            Button { onSelect(ply.n) } label: {
+    @ViewBuilder private func cell(_ entry: (index: Int, move: LineMove)?) -> some View {
+        if let entry, let san = entry.move.san {
+            let current = entry.index == cursor
+            Button { onSelect(entry.index) } label: {
                 Text(verbatim: MoveListStyle.figurine(san))
                     .font(Theme.Typography.move)
-                    .foregroundStyle(ply.n == currentIndex ? Theme.Palette.paper : Theme.Palette.ink)
+                    .foregroundStyle(current ? Theme.Palette.paper : Theme.Palette.ink)
                     .padding(.vertical, Theme.Spacing.xxs)
                     .padding(.horizontal, Theme.Spacing.xs)
-                    .background(ply.n == currentIndex ? Theme.Palette.coachBlue : Color.clear)
+                    .background(current ? Theme.Palette.coachBlue : Color.clear)
             }
             .buttonStyle(.plain)
-            .id(ply.n)
+            .id(entry.index)
             .frame(width: Theme.Size.moveCell, alignment: .leading)
         } else {
             Text(verbatim: "…")
@@ -71,8 +83,15 @@ struct MoveListView: View {
     }
 }
 
-/// A move-list row: the move number and its (up to two) plies.
-struct MoveRow { let number: Int; let white: Ply?; let black: Ply? }
+/// A move-list row: the move number and its (up to two) moves, each carrying its index into the
+/// shown line. `isBranch` marks a row that opens a variation.
+struct MoveRow: Identifiable {
+    let id: String
+    let number: Int
+    let white: (index: Int, move: LineMove)?
+    let black: (index: Int, move: LineMove)?
+    let isBranch: Bool
+}
 
 /// Presentation for the move list — row grouping from FENs, and figurine notation.
 enum MoveListStyle {
@@ -134,22 +153,29 @@ enum MoveListStyle {
         return out.joined(separator: " ")
     }
 
-    /// Group plies (ply 0 = start) into numbered rows. Each ply's move number + color come from the
-    /// position it was played in — the previous ply's FEN — so a black-to-move start reads "1… ".
-    static func rows(_ plies: [Ply]) -> [MoveRow] {
-        guard plies.count > 1 else { return [] }
+    /// Group the shown line into numbered rows. Number and color come from each move's OWN resulting
+    /// fen (LineMove.number / .whiteMoved), which is what makes this work identically for a mainline
+    /// ply and for a variation move played at any depth — a black-to-move start reads "1… ", and a
+    /// sideline picks up at its real move number rather than being renumbered from 1.
+    static func rows(_ line: [LineMove]) -> [MoveRow] {
         var out: [MoveRow] = []
-        for i in 1 ..< plies.count {
-            let ply = plies[i]
-            let f = plies[i - 1].fen.split(separator: " ")
-            let color = f.count > 1 ? String(f[1]) : "w"
-            let number = f.count > 5 ? (Int(f[5]) ?? out.count + 1) : out.count + 1
-            if color == "w" {
-                out.append(MoveRow(number: number, white: ply, black: nil))
-            } else if let last = out.last, last.number == number, last.black == nil {
-                out[out.count - 1] = MoveRow(number: number, white: last.white, black: ply)
+        for (i, m) in line.enumerated() {
+            guard m.san != nil else { continue }        // the root "…" block is not a move
+            // The navigator's "?" placeholder (the drill's parked wrong tries) is an affordance,
+            // not a played move: it has no uci and no resulting position of its own, so numbering
+            // it from the solve fen would print a move that was never made. The strip renders it
+            // unnumbered; the game score simply doesn't carry it.
+            guard !(m.uci == nil && m.san == "?") else { continue }
+            let entry = (index: i, move: m)
+            if m.whiteMoved {
+                out.append(MoveRow(id: m.id, number: m.number, white: entry, black: nil,
+                                   isBranch: m.isBranch))
+            } else if let last = out.last, last.number == m.number, last.black == nil {
+                out[out.count - 1] = MoveRow(id: last.id, number: last.number, white: last.white,
+                                             black: entry, isBranch: last.isBranch || m.isBranch)
             } else {
-                out.append(MoveRow(number: number, white: nil, black: ply))
+                out.append(MoveRow(id: m.id, number: m.number, white: nil, black: entry,
+                                   isBranch: m.isBranch))
             }
         }
         return out

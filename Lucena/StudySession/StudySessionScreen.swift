@@ -166,6 +166,22 @@ struct StudySessionScreen: View {
         isInVariation ? min(max(varCursor, 0), max(0, displayLine.count - 1)) : currentPlyIndex
     }
 
+    /// Jump the board to a move in the shown line — the ONE navigation entry point, shared by the
+    /// navigator strip and the Analysis panel's move list (2026-07-26: the panel now shows the same
+    /// mainline-plus-variation line, so both must move the board the same way). Not wrapped in
+    /// withAnimation → a random jump snaps (no multi-piece slide). On the mainline, the last move can
+    /// go "live".
+    private func selectLineIndex(_ i: Int) {
+        if i == placeholderIndex {                     // "?" → show the solving position (live tip)
+            if isInVariation { varCursor = displayLine.count - 1 } else { viewIndex = nil }
+        } else if isInVariation {
+            varCursor = i
+        } else {
+            viewIndex = (i >= liveIndex && history.indices.contains(i)
+                         && history[i].fen == board?.fen) ? nil : i
+        }
+    }
+
     // Board precedence: an active variation > browsing history > a held wrong move > the Retry solve
     // position (after Retry, preserved even if the coach repaints) > the live board.
     private var displayedFen: String {
@@ -200,8 +216,13 @@ struct StudySessionScreen: View {
     // see CoachPrompt.frame server-side). Reported to the backend via /view so it isn't a guess.
     private var povColor: String { boardFlipped ? "black" : "white" }
     // The eval bar's source: the live analyzer's top line for the CURRENT position (white-relative).
+    // Gated on the SAME switches that run the analyzer (2026-07-26): with analysis off the engine is
+    // stopped, so the last line it streamed is a leftover — on an unchanged position it would keep
+    // winning over the board's reported eval and the switch would look ignored.
     private var liveEval: (cp: Int, winPct: Double)? {
-        guard let el = stream?.engineLines, el.fen == displayedFen, let top = el.lines.first else { return nil }
+        guard engineOn, analysisOn,
+              let el = stream?.engineLines, el.fen == displayedFen,
+              let top = el.lines.first else { return nil }
         return (top.evalWhiteCp, top.winPct)
     }
     // The best eval available for the position on screen, or nil if none yet — used to HOLD the last
@@ -448,17 +469,22 @@ struct StudySessionScreen: View {
     }
 
     /// Tell the server whether to run live analysis and on which position — debounced, so arrowing
-    /// through moves doesn't spam it. Runs only while the Analysis tab is open and the toggle is on.
+    /// through moves doesn't spam it.
     private func syncAnalysis() {
-        // Run the dedicated analyzer whenever the engine is on and a real position is up — the eval bar
-        // reads its live eval, so it fills in immediately (not only when the Analysis tab is open).
-        let active = engineOn && board != nil
+        // THE PANEL'S SWITCH IS THE ENGINE'S SWITCH (2026-07-26). It used to gate only the display,
+        // so switching analysis off left a Stockfish deepening away on a position nobody was reading
+        // — harmless while /analyze was a stub, a lie now that it drives a real engine. With it off
+        // the eval readout falls back to the board's reported eval.
+        // The FEN is whatever is on the board: a mainline ply, a scrub, or a variation move. The
+        // panel analyzes what you are looking at.
+        let active = engineOn && analysisOn && board != nil
         let fen = displayedFen
+        let sid = session
         analyzeTask?.cancel()
         analyzeTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             if Task.isCancelled { return }
-            await coach?.setAnalysis(on: active, fen: fen)
+            await coach?.setAnalysis(on: active, fen: fen, sessionId: sid)
         }
     }
 
@@ -603,18 +629,7 @@ struct StudySessionScreen: View {
                 line: navigatorLine, cursor: lineCursor, inVariation: isInVariation,
                 // The "?" placeholder always "has variations" — its wrong tries. (Same gold underline.)
                 hasVariations: { $0 == placeholderIndex ? true : hasAlternatives($0) },
-                onSelect: { i in
-                    // Jump the board to a move in the shown line. Not wrapped in withAnimation → a random
-                    // jump snaps (no multi-piece slide). On the mainline, the last move can go "live".
-                    if i == placeholderIndex {                     // "?" → show the solving position (live tip)
-                        if isInVariation { varCursor = displayLine.count - 1 } else { viewIndex = nil }
-                    }
-                    else if isInVariation { varCursor = i }
-                    else {
-                        viewIndex = (i >= liveIndex && history.indices.contains(i)
-                                     && history[i].fen == board?.fen) ? nil : i
-                    }
-                },
+                onSelect: selectLineIndex,
                 onCaretTap: { id, idx in
                     if idx == placeholderIndex {
                         // The "?" caret lists every wrong try parked at the solving position.
@@ -1546,11 +1561,12 @@ struct StudySessionScreen: View {
                     }
                     }
                 case .analysis:
+                    // The SAME line the navigator shows — mainline plus whatever variation is
+                    // open — and the same jump handler, so the panel is a full second navigator
+                    // rather than a mainline-only score (owner 2026-07-26).
                     AnalysisView(engineLines: stream?.engineLines, currentFen: displayedFen,
-                                 analysisOn: $analysisOn, plies: history,
-                                 currentIndex: currentPlyIndex) { i in
-                        viewIndex = i >= liveIndex ? nil : i
-                    }
+                                 analysisOn: $analysisOn, line: navigatorLine,
+                                 cursor: lineCursor, onSelect: selectLineIndex)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -195,8 +195,13 @@ final class CoachBridge: Sendable {
     // -- drill / analysis (REST; backend follow-up) ------------------------
 
     /// Toggle live engine analysis for the on-screen position. (Backend `/analyze` follow-up.)
-    func setAnalysis(on: Bool, fen: String) async {
-        await post("analyze", ["on": on, "fen": fen])
+    /// Point the live analyzer at `fen` (or switch it off). The chat is named explicitly — the
+    /// engine's lines are published to that chat's sockets, and the server keys its per-session
+    /// bookkeeping on it; omitting it would fall back to whichever chat is active server-side.
+    func setAnalysis(on: Bool, fen: String, sessionId: String? = nil) async {
+        var body: [String: Any] = ["on": on, "fen": fen]
+        if let sessionId { body["session_id"] = sessionId }
+        await post("analyze", body)
     }
 
     /// Push a raw played move for drill adjudication. (Backend `/move` follow-up.)

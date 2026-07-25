@@ -8,8 +8,8 @@ struct AnalysisView: View {
     let engineLines: EngineLines?
     let currentFen: String              // the position on the board (gate engine lines to it)
     @Binding var analysisOn: Bool
-    let plies: [Ply]
-    let currentIndex: Int
+    let line: [LineMove]                // the SHOWN line — mainline plus any open variation
+    let cursor: Int
     let onSelect: (Int) -> Void
 
     /// Engine lines only when they describe the position currently shown.
@@ -22,12 +22,14 @@ struct AnalysisView: View {
         VStack(alignment: .leading, spacing: 0) {
             engineHeader
             if let el = lines {
-                ForEach(el.lines) { line in engineRow(line, fen: el.fen) }
+                // FOUR lines (owner 2026-07-26). The server searches MultiPV=4; the prefix is the
+                // app's own guard so a differently-configured server can never stretch the panel.
+                ForEach(el.lines.prefix(AnalysisStyle.maxLines)) { l in engineRow(l, fen: el.fen) }
                 if let opening = el.opening, !opening.isEmpty { openingRow(opening) }
             } else if let opening = engineLines?.opening, !opening.isEmpty {
                 openingRow(opening)
             }
-            MoveListView(plies: plies, currentIndex: currentIndex, onSelect: onSelect)
+            MoveListView(line: line, cursor: cursor, onSelect: onSelect)
         }
     }
 
@@ -35,10 +37,18 @@ struct AnalysisView: View {
 
     private var engineHeader: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Toggle("", isOn: $analysisOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+            // A SQUARE switch (owner 2026-07-26), not the macOS pill: this is a paper-and-ink
+            // print interface, and the rounded system control was the one shape in the panel that
+            // came from somewhere else. Ink box, ink fill when live.
+            Button { analysisOn.toggle() } label: {
+                Rectangle()
+                    .fill(analysisOn ? Theme.Palette.ink : Color.clear)
+                    .frame(width: 12, height: 12)
+                    .overlay(Rectangle().stroke(Theme.Palette.ink, lineWidth: 1.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Strings.StudySession.tabAnalysis)
+            .accessibilityValue(analysisOn ? "on" : "off")
             Text(Strings.StudySession.tabAnalysis)
                 .font(Theme.Typography.label)
                 .foregroundStyle(Theme.Palette.ink)
@@ -91,6 +101,9 @@ struct AnalysisView: View {
 }
 
 private enum AnalysisStyle {
+    /// The panel shows the engine's top FOUR lines.
+    static let maxLines = 4
+
     /// White-relative eval in pawns ("+0.23", "−0.50", "0.00"); a ceiled mate reads "+#"/"−#".
     static func evalText(_ cp: Int) -> String {
         if abs(cp) >= 1000 { return cp > 0 ? "+#" : "−#" }
