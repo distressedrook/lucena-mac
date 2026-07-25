@@ -583,7 +583,7 @@ struct StudySessionScreen: View {
             .overlay(alignment: .topTrailing) {          // just the eval readout, floated above the board
                 Text(shownEvalText)
                     .font(Theme.Typography.evalReadout)
-                    .foregroundStyle(Theme.Palette.ink82)
+                    .foregroundStyle(Theme.Palette.ink)
                     .contentTransition(.numericText())    // roll the digits, don't cut
                     .offset(y: -(evalGearRowH + Theme.Spacing.xs))
             }

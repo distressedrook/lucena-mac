@@ -94,7 +94,7 @@ private struct BeatRow: View {
                     label
                     HStack(spacing: Theme.Spacing.xs) {
                         Text(Strings.StudySession.played)
-                            .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
+                            .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink)
                         if let move = beat.move, let fen = beat.fen {
                             moveChip(move) { onMoveTap(fen) }        // clickable, no tick
                         }
@@ -142,20 +142,20 @@ private struct BeatRow: View {
             HStack(spacing: Theme.Spacing.xs) {
                 if let move, let fen {                     // a played move → clickable navigator-style chip
                     Text(Strings.StudySession.played)
-                        .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
+                        .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink)
                     HStack(spacing: 0) {                   // verdict badge ABUTS the move — a stamp on it
                         moveChip(move) { onMoveTap(fen) }
                         if let correct { verdictBadge(correct) }   // green check / red cross, touching
                     }
                     if let sfx = suffix(of: text, after: move), !sfx.isEmpty {
                         Text(verbatim: sfx)
-                            .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink82)
+                            .font(Theme.Typography.coachBody).foregroundStyle(Theme.Palette.ink)
                     }
                 } else {
                     if let correct { verdictBadge(correct) }   // no move (typed answer) → badge stands alone
                     Text(text)                             // plain text, no bubble box; same size as the coach
                         .font(Theme.Typography.coachBody)
-                        .foregroundStyle(Theme.Palette.ink82)
+                        .foregroundStyle(Theme.Palette.ink)
                 }
             }
         }

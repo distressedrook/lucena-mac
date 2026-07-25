@@ -13,11 +13,18 @@ enum Theme {
         static let desk = Color(hex: 0xE4E0D5)         // window bg (radial outer)
         static let backdrop = Color(hex: 0xDDD8CC)     // window backdrop
 
-        static let ink = Color(hex: 0x1C1B18)          // text, borders, fills, dark pieces
-        static let ink82 = ink.opacity(0.82)           // strong secondary
-        static let ink70 = ink.opacity(0.70)           // secondary
-        static let ink55 = ink.opacity(0.55)           // muted
-        static let ink45 = ink.opacity(0.45)           // labels
+        // BODY TEXT IS `ink`, FULL STOP (owner 2026-07-25: "why is the text
+        // color gray? make it ink"). The opacity ramp below is for CHROME —
+        // hairlines, rules, marks, small uppercase labels and state that has
+        // to read as inactive. Anything a reader actually reads (coach prose,
+        // theory, plans, weaknesses, readouts, engine lines) uses `ink`;
+        // reaching for ink82/ink70 to "soften" prose is what made the app
+        // read gray.
+        static let ink = Color(hex: 0x1C1B18)          // ALL body text; borders, fills, dark pieces
+        static let ink82 = ink.opacity(0.82)           // chrome: strong secondary
+        static let ink70 = ink.opacity(0.70)           // chrome: secondary / inactive state
+        static let ink55 = ink.opacity(0.55)           // chrome: muted
+        static let ink45 = ink.opacity(0.45)           // chrome: small uppercase labels, marks
         static let ink22 = ink.opacity(0.22)           // hairlines
         static let ink18 = ink.opacity(0.18)           // past-beat rule
         static let ink12 = ink.opacity(0.12)

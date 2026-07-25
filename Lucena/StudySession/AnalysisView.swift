@@ -70,7 +70,7 @@ struct AnalysisView: View {
                 .overlay(Rectangle().stroke(Theme.Palette.ink22, lineWidth: 1))
             Text(verbatim: AnalysisStyle.numberedPV(fen: fen, sans: line.pvSan))
                 .font(Theme.Typography.move)
-                .foregroundStyle(Theme.Palette.ink70)
+                .foregroundStyle(Theme.Palette.ink)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

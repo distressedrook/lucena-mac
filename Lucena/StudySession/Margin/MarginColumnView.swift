@@ -119,7 +119,7 @@ struct MarginColumnView: View {
                         Text("\u{2022}").foregroundStyle(Theme.Palette.ink45)
                         Text(tip)
                             .font(Theme.Typography.cardBody)
-                            .foregroundStyle(Theme.Palette.ink82)
+                            .foregroundStyle(Theme.Palette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -214,7 +214,7 @@ struct MarginColumnView: View {
         VStack(alignment: centered ? .center : .leading, spacing: Theme.Spacing.xxs) {
             Text("\u{201C}\(e.quote)\u{201D}")
                 .font(Theme.Typography.epigraph)
-                .foregroundStyle(Theme.Palette.ink82)
+                .foregroundStyle(Theme.Palette.ink)
                 .multilineTextAlignment(centered ? .center : .leading)
                 .fixedSize(horizontal: false, vertical: true)
             Text("\u{2014} \(e.author)")
@@ -257,7 +257,7 @@ struct MarginColumnView: View {
                                     .enumerated()), id: \.offset) { _, para in
                         Text(para)
                             .font(Theme.Typography.cardBody)
-                            .foregroundStyle(Theme.Palette.ink82)
+                            .foregroundStyle(Theme.Palette.ink)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -350,8 +350,15 @@ private struct SideReportView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             header
             space
-            planList("Plans", side.plans.filter { $0.verified == true })
-            if !side.advisory.isEmpty { planList("Ideas", side.advisory) }
+            // EVERY detected plan, under its evidence tag (owner 2026-07-25).
+            // The column used to show `plans.filter { verified == true }` plus
+            // an "Ideas" box for the advisory tier — so a plan the engine
+            // didn't happen to play in this roll simply vanished (the minority
+            // attack confirms on ~half the rolls of the same Carlsbad). The
+            // tiers come from the server's verdict, never merged.
+            planList("Engine confirmed", tier(.engine))
+            planList("Strong humans play this", tier(.human))
+            planList("Structure suggests this", tier(.structure))
             bulletList("Weaknesses", side.weaknesses)
             breaks
             chips("Trapped", side.trapped.map { "\($0.piece)\($0.square)" })
@@ -360,12 +367,40 @@ private struct SideReportView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// The three evidence tiers, read off the server's verdict — the same
+    /// split `position_read` prints in the coach's text, so the two surfaces
+    /// can never disagree about how good a plan's evidence is.
+    private enum Tier { case engine, human, structure }
+
+    private func tier(_ t: Tier) -> [Plan] {
+        let engine = ["CONFIRMED-SOUND", "CONFIRMED-SOUND-LATER"]
+        let picked: [Plan]
+        switch t {
+        case .engine:    picked = side.plans.filter { engine.contains($0.verdict ?? "") }
+        case .human:     picked = side.plans.filter { $0.verdict == "HUMAN-TYPICAL" }
+        // neither leg fired here — plus the advisory tier, which carries no
+        // family and so has no engine contract to check by construction.
+        case .structure: picked = side.plans.filter {
+                             !engine.contains($0.verdict ?? "")
+                                 && $0.verdict != "HUMAN-TYPICAL"
+                         } + side.advisory
+        }
+        // corpus effect inside the tier (stable — equal effect keeps the
+        // server's own order)
+        return picked.enumerated()
+            .sorted { a, b in
+                let (ea, eb) = (a.element.effect ?? 0, b.element.effect ?? 0)
+                return ea == eb ? a.offset < b.offset : ea > eb
+            }
+            .map(\.element)
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
             Text(title.uppercased())
                 .font(Theme.Typography.masthead)
                 .tracking(Theme.Tracking.labelWide)
-                .foregroundStyle(Theme.Palette.ink82)
+                .foregroundStyle(Theme.Palette.ink)
             Rectangle().fill(Theme.Palette.ink22).frame(height: 1.5)
         }
     }
@@ -381,7 +416,7 @@ private struct SideReportView: View {
                 ForEach(regions, id: \.0) { r, sp in
                     HStack(spacing: Theme.Spacing.xs) {
                         Text(r.capitalized).font(Theme.Typography.cardBody)
-                            .foregroundStyle(Theme.Palette.ink70)
+                            .foregroundStyle(Theme.Palette.ink)
                         if !sp.exploitable.isEmpty {
                             Text("holes " + sp.exploitable.joined(separator: " "))
                                 .font(Theme.Typography.cardBody)
@@ -402,7 +437,7 @@ private struct SideReportView: View {
                         MoveChip(text: b.push)
                         Text("hits " + b.targets.joined(separator: " "))
                             .font(Theme.Typography.cardBody)
-                            .foregroundStyle(b.playable ? Theme.Palette.ink70
+                            .foregroundStyle(b.playable ? Theme.Palette.ink
                                              : Theme.Palette.ink45)
                         if !b.playable {
                             Text("· prep").font(Theme.Typography.labelSmall)
@@ -423,7 +458,7 @@ private struct SideReportView: View {
                         Text("▪").font(Theme.Typography.cardBody)
                             .foregroundStyle(Theme.Palette.ink45)
                         Text(p.idea).font(Theme.Typography.cardBody)
-                            .foregroundStyle(Theme.Palette.ink82)
+                            .foregroundStyle(Theme.Palette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                         if let t = timingTag(p.timing) { MarginBadge(text: t) }
                     }
@@ -441,7 +476,7 @@ private struct SideReportView: View {
                         Text("▪").font(Theme.Typography.cardBody)
                             .foregroundStyle(Theme.Palette.ink45)
                         Text(s).font(Theme.Typography.cardBody)
-                            .foregroundStyle(Theme.Palette.ink70)
+                            .foregroundStyle(Theme.Palette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -490,7 +525,7 @@ private struct StatBar: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
             Text(label).font(Theme.Typography.cardBody)
-                .foregroundStyle(Theme.Palette.ink70)
+                .foregroundStyle(Theme.Palette.ink)
                 .frame(width: 76, alignment: .leading)
             GeometryReader { geo in
                 let w = geo.size.width
@@ -521,7 +556,7 @@ private struct StatBar: View {
             // trailing: which side leads (centered) or the raw 0-1 (absolute)
             Text(trailing)
                 .font(Theme.Typography.cardMove)
-                .foregroundStyle(Theme.Palette.ink55)
+                .foregroundStyle(Theme.Palette.ink)
                 .frame(width: 34, alignment: .trailing)
         }
     }
@@ -557,7 +592,7 @@ struct MarginBadge: View {
         Text(text.uppercased())
             .font(Theme.Typography.labelSmall)
             .tracking(Theme.Tracking.label)
-            .foregroundStyle(strong ? Theme.Palette.ink82 : Theme.Palette.ink55)
+            .foregroundStyle(strong ? Theme.Palette.ink : Theme.Palette.ink70)
             .padding(.horizontal, Theme.Spacing.xs)
             .padding(.vertical, Theme.Spacing.hair)
             .overlay(Rectangle().stroke(

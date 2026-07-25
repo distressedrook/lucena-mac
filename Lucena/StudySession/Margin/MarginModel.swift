@@ -220,7 +220,16 @@ struct Plan: Decodable, Identifiable {
     var id: String { idea }
     let idea: String
     let verified: Bool?
+    /// The verify gate's own word — the EVIDENCE TIER the margin prints
+    /// (owner 2026-07-25: surface every plan under three tags). `verified`
+    /// pools the engine and human legs into one boolean and so cannot tell
+    /// them apart; the verdict can. Absent on advisory entries, which have
+    /// no engine contract to check and are structural by construction.
+    let verdict: String?
     let timing: String?                 // "immediate" | "developing" | "long-term"
+    /// Corpus effect — the ranking key INSIDE a tier (advisory entries carry
+    /// it too, so an advisory idea can outrank an unconfirmed family plan).
+    let effect: Double?
 }
 
 struct PawnBreak: Decodable, Identifiable {
