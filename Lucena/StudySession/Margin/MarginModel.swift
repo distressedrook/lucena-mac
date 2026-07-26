@@ -183,11 +183,15 @@ struct Side: Decodable {
     let breaks: [PawnBreak]
     let passers: [Passer]
     let trapped: [TrappedPiece]
+    /// Squares in the ENEMY camp this side can occupy — the asset. Distinct
+    /// from `holes`, which are the squares in ITS OWN camp the enemy can
+    /// occupy (owner 2026-07-26: "holes are differently used than outposts").
     let outposts: [Hole]
+    let holes: [Hole]
 
     private enum CodingKeys: String, CodingKey {
         case activity, control, space, plans, advisory, weaknesses,
-             breaks, passers, trapped, outposts
+             breaks, passers, trapped, outposts, holes
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -201,6 +205,7 @@ struct Side: Decodable {
         passers = try c.decodeIfPresent([Passer].self, forKey: .passers) ?? []
         trapped = try c.decodeIfPresent([TrappedPiece].self, forKey: .trapped) ?? []
         outposts = try c.decodeIfPresent([Hole].self, forKey: .outposts) ?? []
+        holes = try c.decodeIfPresent([Hole].self, forKey: .holes) ?? []
     }
 }
 

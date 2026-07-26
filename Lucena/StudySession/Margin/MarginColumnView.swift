@@ -365,7 +365,11 @@ private struct SideReportView: View {
                                          .map { "\($0.piece)\($0.square)" })
             chips("Restricted", side.trapped.filter { $0.state == "restricted" }
                                             .map { "\($0.piece)\($0.square)" })
-            chips("Outposts", side.outposts.map { $0.square })
+            // Two different things, said differently (owner 2026-07-26): an
+            // OUTPOST is a square in the enemy camp you can occupy, a HOLE is
+            // one in your own camp they can. The labels carry the use.
+            chips("Outposts to occupy", side.outposts.map { $0.square })
+            chips("Holes they can use", side.holes.map { $0.square })
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
