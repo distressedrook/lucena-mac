@@ -51,14 +51,8 @@ struct MarginColumnView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                     winningTips("CONVERTING", winning.advice)
                                     winningTips("DEFENDING", winning.defense)
-                                    if let kb = winning.kingBars, !kb.isEmpty {
-                                        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                                            Text("KING SAFETY")
-                                                .font(Theme.Typography.cardHeading)
-                                                .tracking(Theme.Tracking.label)
-                                                .foregroundStyle(Theme.Palette.ink45)
-                                            ForEach(kb) { StatBar(label: $0.label, value: $0.value, mid: $0.mid) }
-                                        }
+                                    if let kt = winning.kingTags, !kt.isEmpty {
+                                        winningTips("KING SAFETY", kt)
                                     }
                                 }
                             } else {
@@ -127,8 +121,9 @@ struct MarginColumnView: View {
         }
     }
 
-    /// The labeled 0-1 bars (Eval/Activity/Space centered, king safety
-    /// absolute). Comparable quantities only — see the server's _bars_block.
+    /// The labeled 0-1 bars — Activity and Space, both centered. Comparable
+    /// quantities only (see the server's _bars_block); the eval bar and the two
+    /// king bars are gone (owner 2026-07-26), king safety being a tag now.
     @ViewBuilder private var statBars: some View {
         let bars = content.sheet?.bars ?? []
         if !bars.isEmpty {

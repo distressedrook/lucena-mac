@@ -93,9 +93,9 @@ struct Sheet: Decodable {
     /// metrics moved to `bars`.
     let badges: [String]?
     /// Labeled 0-1 bars driven by COMPARABLE quantities (owner 2026-07-24:
-    /// "bars instead of labels"): Eval/Activity/Space centered at `mid` 0.5
-    /// (White edge past the midline), king safety absolute (0=safe..1=lost,
-    /// no mid). No control bar.
+    /// "bars instead of labels"): Activity and Space, centered at `mid` 0.5 —
+    /// a White edge fills past the midline. No eval bar and no king bars
+    /// (owner 2026-07-26); king safety arrives as a badge instead.
     let bars: [Bar]?
     /// Set when a side is OUTRIGHT WINNING: WHY, plus hardcoded generic advice
     /// (conversion tips when material up, always a king-safety reminder). When
@@ -110,12 +110,13 @@ struct Winning: Decodable {
     let reason: String
     let advice: [String]
     let defense: [String]
-    /// King-safety bars shown even when winning (the diagnostic view) —
-    /// storm-aware, so they climb as an attack builds.
-    let kingBars: [Bar]?
+    /// King safety, shown even when winning (the diagnostic view) — a TAG now
+    /// rather than a pair of bars (owner 2026-07-26: the bars were drawn from
+    /// danger/899 and never left the left-hand end, so they read as broken).
+    let kingTags: [String]?
 
     private enum CodingKeys: String, CodingKey {
-        case reason, advice, defense, kingBars = "king_bars"
+        case reason, advice, defense, kingTags = "king_tags"
     }
 }
 
